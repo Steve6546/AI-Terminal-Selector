@@ -21,10 +21,14 @@ import type {
   AnthropicConversationWithMessages,
   AnthropicError,
   AnthropicMessage,
+  Attachment,
   CreateAnthropicConversationBody,
+  CreateAttachmentBody,
   CreateMcpServerBody,
   Execution,
+  ExecutionLog,
   HealthStatus,
+  ListAttachmentsParams,
   ListExecutionsParams,
   McpConnectionTestResult,
   McpServer,
@@ -1829,3 +1833,356 @@ export function useGetSystemStatus<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List logs for a specific execution
+ */
+export const getListExecutionLogsUrl = (executionId: number) => {
+  return `/api/executions/${executionId}/logs`;
+};
+
+export const listExecutionLogs = async (
+  executionId: number,
+  options?: RequestInit,
+): Promise<ExecutionLog[]> => {
+  return customFetch<ExecutionLog[]>(getListExecutionLogsUrl(executionId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListExecutionLogsQueryKey = (executionId: number) => {
+  return [`/api/executions/${executionId}/logs`] as const;
+};
+
+export const getListExecutionLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listExecutionLogs>>,
+  TError = ErrorType<void>,
+>(
+  executionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listExecutionLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListExecutionLogsQueryKey(executionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listExecutionLogs>>
+  > = ({ signal }) =>
+    listExecutionLogs(executionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!executionId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listExecutionLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListExecutionLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listExecutionLogs>>
+>;
+export type ListExecutionLogsQueryError = ErrorType<void>;
+
+/**
+ * @summary List logs for a specific execution
+ */
+
+export function useListExecutionLogs<
+  TData = Awaited<ReturnType<typeof listExecutionLogs>>,
+  TError = ErrorType<void>,
+>(
+  executionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listExecutionLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListExecutionLogsQueryOptions(executionId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List attachments, optionally filtered by conversation
+ */
+export const getListAttachmentsUrl = (params?: ListAttachmentsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/attachments?${stringifiedParams}`
+    : `/api/attachments`;
+};
+
+export const listAttachments = async (
+  params?: ListAttachmentsParams,
+  options?: RequestInit,
+): Promise<Attachment[]> => {
+  return customFetch<Attachment[]>(getListAttachmentsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAttachmentsQueryKey = (params?: ListAttachmentsParams) => {
+  return [`/api/attachments`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAttachmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAttachments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAttachmentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAttachments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAttachmentsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAttachments>>> = ({
+    signal,
+  }) => listAttachments(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAttachments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAttachmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAttachments>>
+>;
+export type ListAttachmentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List attachments, optionally filtered by conversation
+ */
+
+export function useListAttachments<
+  TData = Awaited<ReturnType<typeof listAttachments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAttachmentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAttachments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAttachmentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create an attachment record
+ */
+export const getCreateAttachmentUrl = () => {
+  return `/api/attachments`;
+};
+
+export const createAttachment = async (
+  createAttachmentBody: CreateAttachmentBody,
+  options?: RequestInit,
+): Promise<Attachment> => {
+  return customFetch<Attachment>(getCreateAttachmentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAttachmentBody),
+  });
+};
+
+export const getCreateAttachmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAttachment>>,
+    TError,
+    { data: BodyType<CreateAttachmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAttachment>>,
+  TError,
+  { data: BodyType<CreateAttachmentBody> },
+  TContext
+> => {
+  const mutationKey = ["createAttachment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAttachment>>,
+    { data: BodyType<CreateAttachmentBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAttachment(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAttachmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAttachment>>
+>;
+export type CreateAttachmentMutationBody = BodyType<CreateAttachmentBody>;
+export type CreateAttachmentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create an attachment record
+ */
+export const useCreateAttachment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAttachment>>,
+    TError,
+    { data: BodyType<CreateAttachmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAttachment>>,
+  TError,
+  { data: BodyType<CreateAttachmentBody> },
+  TContext
+> => {
+  return useMutation(getCreateAttachmentMutationOptions(options));
+};
+
+/**
+ * @summary Delete an attachment
+ */
+export const getDeleteAttachmentUrl = (id: number) => {
+  return `/api/attachments/${id}`;
+};
+
+export const deleteAttachment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteAttachmentUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAttachmentMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAttachment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAttachment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAttachment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAttachment>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAttachment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAttachmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAttachment>>
+>;
+
+export type DeleteAttachmentMutationError = ErrorType<void>;
+
+/**
+ * @summary Delete an attachment
+ */
+export const useDeleteAttachment = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAttachment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAttachment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteAttachmentMutationOptions(options));
+};

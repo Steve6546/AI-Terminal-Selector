@@ -426,6 +426,83 @@ paths:
               schema:
                 $ref: "#/components/schemas/SystemStatus"
 
+  /executions/{executionId}/logs:
+    get:
+      operationId: listExecutionLogs
+      tags: [executions]
+      summary: List logs for a specific execution
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of execution log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExecutionLog"
+        "404":
+          description: Execution not found
+
+  /attachments:
+    get:
+      operationId: listAttachments
+      tags: [attachments]
+      summary: List attachments, optionally filtered by conversation
+      parameters:
+        - name: conversationId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of attachments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attachment"
+    post:
+      operationId: createAttachment
+      tags: [attachments]
+      summary: Create an attachment record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAttachmentBody"
+      responses:
+        "201":
+          description: Created attachment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attachment"
+
+  /attachments/{id}:
+    delete:
+      operationId: deleteAttachment
+      tags: [attachments]
+      summary: Delete an attachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Attachment not found
+
 components:
   schemas:
     HealthStatus:
@@ -796,3 +873,63 @@ components:
         - totalTools
         - agentState
         - activeExecutions
+
+    ExecutionLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        executionId:
+          type: integer
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        eventType:
+          type: string
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - executionId
+        - level
+        - eventType
+        - message
+        - createdAt
+
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        fileName:
+          type: string
+        fileType:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fileName
+        - fileType
+        - createdAt
+
+    CreateAttachmentBody:
+      type: object
+      properties:
+        conversationId:
+          type: integer
+        fileName:
+          type: string
+        fileType:
+          type: string
+        content:
+          type: string
+      required:
+        - fileName
+        - fileType

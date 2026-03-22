@@ -397,3 +397,55 @@ export const GetSystemStatusResponse = zod.object({
   agentState: zod.enum(["idle", "busy"]),
   activeExecutions: zod.number(),
 });
+
+/**
+ * @summary List logs for a specific execution
+ */
+export const ListExecutionLogsParams = zod.object({
+  executionId: zod.coerce.number(),
+});
+
+export const ListExecutionLogsResponseItem = zod.object({
+  id: zod.number(),
+  executionId: zod.number(),
+  level: zod.enum(["debug", "info", "warn", "error"]),
+  eventType: zod.string(),
+  message: zod.string(),
+  createdAt: zod.date(),
+});
+export const ListExecutionLogsResponse = zod.array(
+  ListExecutionLogsResponseItem,
+);
+
+/**
+ * @summary List attachments, optionally filtered by conversation
+ */
+export const ListAttachmentsQueryParams = zod.object({
+  conversationId: zod.coerce.number().optional(),
+});
+
+export const ListAttachmentsResponseItem = zod.object({
+  id: zod.number(),
+  conversationId: zod.number().optional(),
+  fileName: zod.string(),
+  fileType: zod.string(),
+  createdAt: zod.date(),
+});
+export const ListAttachmentsResponse = zod.array(ListAttachmentsResponseItem);
+
+/**
+ * @summary Create an attachment record
+ */
+export const CreateAttachmentBody = zod.object({
+  conversationId: zod.number().optional(),
+  fileName: zod.string(),
+  fileType: zod.string(),
+  content: zod.string().optional(),
+});
+
+/**
+ * @summary Delete an attachment
+ */
+export const DeleteAttachmentParams = zod.object({
+  id: zod.coerce.number(),
+});

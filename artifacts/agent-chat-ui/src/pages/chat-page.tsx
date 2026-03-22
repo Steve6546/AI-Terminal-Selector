@@ -1,10 +1,11 @@
-import { useEffect, useRef, useMemo } from "react";
+import React, { useEffect, useRef, useMemo } from "react";
 import { useParams } from "wouter";
 import { motion } from "framer-motion";
 import { MessageSquare, Zap, Code, TerminalSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useListAnthropicMessages, useListExecutions } from "@workspace/api-client-react";
+import type { AnthropicMessage, Execution } from "@workspace/api-client-react";
 import { useLocalSettings } from "@/hooks/use-local-settings";
 import { useChatStream } from "@/hooks/use-chat-stream";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -49,7 +50,10 @@ export default function ChatPage() {
   const timelineItems = useMemo(() => {
     if (!messages && !executions) return [];
     
-    const items: Array<{type: 'msg' | 'exec', data: any, time: number}> = [];
+    type TimelineItem =
+      | { type: "msg"; data: AnthropicMessage; time: number }
+      | { type: "exec"; data: Execution; time: number };
+    const items: TimelineItem[] = [];
     
     messages?.forEach(m => items.push({ type: 'msg', data: m, time: new Date(m.createdAt).getTime() }));
     executions?.forEach(e => items.push({ type: 'exec', data: e, time: new Date(e.startedAt).getTime() }));
@@ -212,7 +216,6 @@ export default function ChatPage() {
   );
 }
 
-// Re-export Sparkles for the internal component usage above
-function Sparkles(props: any) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinelinejoin="round" {...props}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+function Sparkles(props: React.SVGProps<SVGSVGElement>) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
 }

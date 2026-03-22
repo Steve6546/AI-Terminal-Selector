@@ -283,7 +283,45 @@ export interface SystemStatus {
   activeExecutions: number;
 }
 
+export type ExecutionLogLevel =
+  (typeof ExecutionLogLevel)[keyof typeof ExecutionLogLevel];
+
+export const ExecutionLogLevel = {
+  debug: "debug",
+  info: "info",
+  warn: "warn",
+  error: "error",
+} as const;
+
+export interface ExecutionLog {
+  id: number;
+  executionId: number;
+  level: ExecutionLogLevel;
+  eventType: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface Attachment {
+  id: number;
+  conversationId?: number;
+  fileName: string;
+  fileType: string;
+  createdAt: string;
+}
+
+export interface CreateAttachmentBody {
+  conversationId?: number;
+  fileName: string;
+  fileType: string;
+  content?: string;
+}
+
 export type ListExecutionsParams = {
   conversationId?: number;
   limit?: number;
+};
+
+export type ListAttachmentsParams = {
+  conversationId?: number;
 };

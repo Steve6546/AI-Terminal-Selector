@@ -71,12 +71,13 @@ export function useChatStream({ conversationId, model, onFinish, onError }: Stre
         }
       }
       
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      if (error.name === 'AbortError') {
         console.log('Stream aborted');
       } else {
-        console.error("Stream error:", err);
-        onError?.(err);
+        console.error("Stream error:", error);
+        onError?.(error);
       }
     } finally {
       setIsStreaming(false);
