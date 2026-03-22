@@ -7,6 +7,7 @@ import {
   UpdateMcpServerBody,
   UpdateMcpToolBody,
 } from "@workspace/api-zod";
+import { maskSecret } from "../../lib/secret-utils";
 
 const router: IRouter = Router();
 
@@ -70,7 +71,7 @@ router.post("/mcp-servers", async (req, res) => {
         command: body.command,
         args: body.args ?? [],
         authType: body.authType ?? "none",
-        encryptedSecret: body.authSecret,
+        encryptedSecret: maskSecret(body.authSecret),
         timeout: body.timeout ?? 30,
         retryCount: body.retryCount ?? 3,
         enabled: body.enabled ?? true,
@@ -153,7 +154,7 @@ router.patch("/mcp-servers/:id", async (req, res) => {
     if (body.command !== undefined) updateData.command = body.command;
     if (body.args !== undefined) updateData.args = body.args;
     if (body.authType !== undefined) updateData.authType = body.authType;
-    if (body.authSecret !== undefined) updateData.encryptedSecret = body.authSecret;
+    if (body.authSecret !== undefined) updateData.encryptedSecret = maskSecret(body.authSecret);
     if (body.timeout !== undefined) updateData.timeout = body.timeout;
     if (body.retryCount !== undefined) updateData.retryCount = body.retryCount;
     if (body.enabled !== undefined) updateData.enabled = body.enabled;

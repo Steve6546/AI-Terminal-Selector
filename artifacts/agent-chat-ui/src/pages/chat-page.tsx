@@ -23,13 +23,13 @@ export default function ChatPage() {
 
   // Queries
   const { data: messages, isLoading: loadingMessages } = useListAnthropicMessages(
-    conversationId || 0, 
-    { query: { enabled: !!conversationId } }
+    conversationId ?? 0,
+    { query: { enabled: !!conversationId, queryKey: ["anthropic-messages", conversationId] } }
   );
-  
+
   const { data: executions, isLoading: loadingExecutions } = useListExecutions(
-    { conversationId: conversationId || undefined },
-    { query: { enabled: !!conversationId } }
+    { conversationId: conversationId ?? undefined },
+    { query: { enabled: !!conversationId, queryKey: ["executions", conversationId] } }
   );
 
   // Streaming Hook

@@ -141,7 +141,7 @@ export function Sidebar() {
                       </DropdownMenuItem>
                       <DropdownMenuSeparator className="bg-border" />
                       <DropdownMenuItem 
-                        onClick={(e) => handleDelete(e as any, chat.id)}
+                        onClick={(e) => handleDelete(e as React.MouseEvent, chat.id)}
                         className="gap-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
                       >
                         <Trash2 className="w-4 h-4" /> Delete
