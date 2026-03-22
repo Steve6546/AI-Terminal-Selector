@@ -1,15 +1,26 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Agent Tool Chat API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: anthropic
+    description: Anthropic AI chat operations
+  - name: conversations
+    description: Conversation management
+  - name: mcpServers
+    description: MCP Server management
+  - name: mcpTools
+    description: MCP Tool management
+  - name: executions
+    description: Tool execution tracking
+  - name: settings
+    description: Application settings
 paths:
   /healthz:
     get:
@@ -24,6 +35,397 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /anthropic/conversations:
+    get:
+      operationId: listAnthropicConversations
+      tags: [anthropic]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnthropicConversation"
+    post:
+      operationId: createAnthropicConversation
+      tags: [anthropic]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAnthropicConversationBody"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversation"
+
+  /anthropic/conversations/{id}:
+    get:
+      operationId: getAnthropicConversation
+      tags: [anthropic]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicError"
+    delete:
+      operationId: deleteAnthropicConversation
+      tags: [anthropic]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicError"
+    patch:
+      operationId: updateAnthropicConversation
+      tags: [anthropic]
+      summary: Update a conversation (rename)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAnthropicConversationBody"
+      responses:
+        "200":
+          description: Updated conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversation"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicError"
+
+  /anthropic/conversations/{id}/messages:
+    get:
+      operationId: listAnthropicMessages
+      tags: [anthropic]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnthropicMessage"
+    post:
+      operationId: sendAnthropicMessage
+      tags: [anthropic]
+      summary: Send a message and receive an AI response (SSE stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendAnthropicMessageBody"
+      responses:
+        "200":
+          description: SSE stream of assistant response chunks
+          content:
+            text/event-stream: {}
+
+  /mcp-servers:
+    get:
+      operationId: listMcpServers
+      tags: [mcpServers]
+      summary: List all MCP servers
+      responses:
+        "200":
+          description: List of MCP servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/McpServer"
+    post:
+      operationId: createMcpServer
+      tags: [mcpServers]
+      summary: Create a new MCP server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMcpServerBody"
+      responses:
+        "201":
+          description: Created MCP server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpServer"
+
+  /mcp-servers/{id}:
+    get:
+      operationId: getMcpServer
+      tags: [mcpServers]
+      summary: Get a specific MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: MCP server details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpServer"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateMcpServer
+      tags: [mcpServers]
+      summary: Update an MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMcpServerBody"
+      responses:
+        "200":
+          description: Updated MCP server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpServer"
+    delete:
+      operationId: deleteMcpServer
+      tags: [mcpServers]
+      summary: Delete an MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /mcp-servers/{id}/test:
+    post:
+      operationId: testMcpServerConnection
+      tags: [mcpServers]
+      summary: Test MCP server connection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Connection test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpConnectionTestResult"
+
+  /mcp-servers/{id}/discover:
+    post:
+      operationId: discoverMcpTools
+      tags: [mcpServers]
+      summary: Discover tools from an MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Discovered tools
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/McpTool"
+
+  /mcp-servers/{id}/tools:
+    get:
+      operationId: listMcpTools
+      tags: [mcpTools]
+      summary: List tools for an MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of tools
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/McpTool"
+
+  /mcp-tools/{toolId}:
+    patch:
+      operationId: updateMcpTool
+      tags: [mcpTools]
+      summary: Update an MCP tool (enable/disable, require approval)
+      parameters:
+        - name: toolId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMcpToolBody"
+      responses:
+        "200":
+          description: Updated tool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpTool"
+
+  /executions:
+    get:
+      operationId: listExecutions
+      tags: [executions]
+      summary: List recent executions
+      parameters:
+        - name: conversationId
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of executions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Execution"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get all settings
+      responses:
+        "200":
+          description: Settings map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsMap"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsMap"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsMap"
+
+  /system/status:
+    get:
+      operationId: getSystemStatus
+      tags: [health]
+      summary: Get system status (connected servers, tools count, agent state)
+      responses:
+        "200":
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +436,363 @@ components:
       required:
         - status
 
+    AnthropicConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        model:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+      required:
+        - id
+        - title
+        - model
+        - createdAt
+        - updatedAt
+
+    AnthropicMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        model:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+
+    CreateAnthropicConversationBody:
+      type: object
+      properties:
+        title:
+          type: string
+        model:
+          type: string
+          enum: [claude-sonnet-4-6, claude-opus-4-6]
+          default: claude-sonnet-4-6
+      required:
+        - title
+
+    UpdateAnthropicConversationBody:
+      type: object
+      properties:
+        title:
+          type: string
+        model:
+          type: string
+          enum: [claude-sonnet-4-6, claude-opus-4-6]
+
+    SendAnthropicMessageBody:
+      type: object
+      properties:
+        content:
+          type: string
+        model:
+          type: string
+          enum: [claude-sonnet-4-6, claude-opus-4-6]
+      required:
+        - content
+
+    AnthropicConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        model:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicMessage"
+      required:
+        - id
+        - title
+        - model
+        - createdAt
+        - updatedAt
+        - messages
+
+    AnthropicError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    McpServer:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        transportType:
+          type: string
+          enum: [stdio, streamable-http]
+        endpoint:
+          type: string
+        command:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        authType:
+          type: string
+          enum: [none, bearer, basic]
+        status:
+          type: string
+          enum: [connected, disconnected, checking, error]
+        enabled:
+          type: boolean
+        toolCount:
+          type: integer
+        lastCheckedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - transportType
+        - status
+        - enabled
+        - toolCount
+        - createdAt
+
+    CreateMcpServerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        transportType:
+          type: string
+          enum: [stdio, streamable-http]
+        endpoint:
+          type: string
+        command:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        authType:
+          type: string
+          enum: [none, bearer, basic]
+        authSecret:
+          type: string
+        timeout:
+          type: integer
+          default: 30
+        retryCount:
+          type: integer
+          default: 3
+        enabled:
+          type: boolean
+          default: true
+      required:
+        - name
+        - transportType
+
+    UpdateMcpServerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        transportType:
+          type: string
+          enum: [stdio, streamable-http]
+        endpoint:
+          type: string
+        command:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        authType:
+          type: string
+          enum: [none, bearer, basic]
+        authSecret:
+          type: string
+        timeout:
+          type: integer
+        retryCount:
+          type: integer
+        enabled:
+          type: boolean
+
+    McpConnectionTestResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        toolCount:
+          type: integer
+        latencyMs:
+          type: integer
+      required:
+        - success
+        - message
+
+    McpTool:
+      type: object
+      properties:
+        id:
+          type: integer
+        serverId:
+          type: integer
+        serverName:
+          type: string
+        toolName:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: object
+        outputSchema:
+          type: object
+        enabled:
+          type: boolean
+        requiresApproval:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - serverId
+        - toolName
+        - enabled
+        - requiresApproval
+        - createdAt
+
+    UpdateMcpToolBody:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        requiresApproval:
+          type: boolean
+
+    Execution:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        serverId:
+          type: integer
+        serverName:
+          type: string
+        toolName:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, success, error]
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        resultSummary:
+          type: string
+      required:
+        - id
+        - toolName
+        - status
+        - startedAt
+
+    SettingsMap:
+      type: object
+      properties:
+        agentName:
+          type: string
+        defaultModel:
+          type: string
+          enum: [claude-sonnet-4-6, claude-opus-4-6]
+        systemPrompt:
+          type: string
+        autoRun:
+          type: boolean
+        maxToolCalls:
+          type: integer
+        maxExecutionTime:
+          type: integer
+        theme:
+          type: string
+          enum: [dark, light, system]
+        language:
+          type: string
+        developerMode:
+          type: boolean
+        showTimeline:
+          type: boolean
+        showTechnicalDetails:
+          type: boolean
+
+    SystemStatus:
+      type: object
+      properties:
+        connectedServers:
+          type: integer
+        disconnectedServers:
+          type: integer
+        totalTools:
+          type: integer
+        agentState:
+          type: string
+          enum: [idle, busy]
+        activeExecutions:
+          type: integer
+      required:
+        - connectedServers
+        - disconnectedServers
+        - totalTools
+        - agentState
+        - activeExecutions

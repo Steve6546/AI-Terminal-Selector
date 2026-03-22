@@ -1,0 +1,17 @@
+packages:
+  "framer-motion": "For smooth transitions, message appear animations, and layout changes"
+  "date-fns": "For elegant human-readable timestamp formatting"
+  "react-markdown": "For rendering assistant markdown responses securely"
+  "remark-gfm": "For github flavored markdown support (tables, strikethrough) in responses"
+  "react-syntax-highlighter": "For premium code block syntax highlighting in chat"
+  "react-textarea-autosize": "For smooth, auto-expanding chat input similar to premium AI tools"
+
+images:
+  - path: "artifacts/agent-chat-ui/public/images/empty-state-orb.png"
+    description: "A sleek, glowing abstract orb in deep violet and indigo colors against a completely dark space background, futuristic, premium, minimalist 3D render, soft light dispersion"
+    aspect_ratio: "1:1"
+
+notes:
+  - Using generated hooks from @workspace/api-client-react for all REST calls
+  - Implementing custom SSE hook (use-chat-stream) for streaming responses since Orval doesn't support SSE hooks
+  - Interleaving messages and executions in the chat view based on timestamps

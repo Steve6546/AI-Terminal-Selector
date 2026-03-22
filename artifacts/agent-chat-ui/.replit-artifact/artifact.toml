@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Agent Tool Chat"
+version = "1.0.0"
+id = "artifacts/agent-chat-ui"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22203
+
+[services.development]
+run = "pnpm --filter @workspace/agent-chat-ui run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/agent-chat-ui", "run", "build" ]
+publicDir = "artifacts/agent-chat-ui/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22203"
+BASE_PATH = "/"

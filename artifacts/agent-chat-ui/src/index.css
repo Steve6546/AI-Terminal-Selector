@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme inline {
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Premium Dark Theme Palette */
+  --color-background: #09090b; /* Very deep almost-black gray */
+  --color-foreground: #fafafa;
+  
+  --color-card: #121217;
+  --color-card-foreground: #fafafa;
+  
+  --color-popover: #121217;
+  --color-popover-foreground: #fafafa;
+  
+  --color-primary: #6366f1; /* Indigo 500 */
+  --color-primary-foreground: #ffffff;
+  
+  --color-secondary: #27272a;
+  --color-secondary-foreground: #fafafa;
+  
+  --color-muted: #1f1f25;
+  --color-muted-foreground: #a1a1aa;
+  
+  --color-accent: #312e81; /* Deep Indigo */
+  --color-accent-foreground: #e0e7ff;
+  
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #fafafa;
+  
+  --color-border: #27272a;
+  --color-input: #18181b;
+  --color-ring: #6366f1;
+  
+  --color-sidebar: #0f0f13;
+  --color-sidebar-foreground: #fafafa;
+  --color-sidebar-border: #1f1f25;
+  --color-sidebar-accent: #1f1f25;
+  --color-sidebar-accent-foreground: #fafafa;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+}
+
+:root {
+  /* Enforce dark mode variables globally */
+  --background: 240 10% 4%;
+  --foreground: 0 0% 98%;
+  --card: 240 12% 8%;
+  --card-foreground: 0 0% 98%;
+  --popover: 240 12% 8%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 235 86% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 16%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 6% 12%;
+  --muted-foreground: 240 5% 65%;
+  --accent: 235 48% 35%;
+  --accent-foreground: 235 80% 90%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 6% 16%;
+  --input: 240 6% 12%;
+  --ring: 235 86% 65%;
+  --radius: 0.75rem;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased font-sans;
+    /* Custom scrollbar for dark theme */
+    scrollbar-width: thin;
+    scrollbar-color: #27272a transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #27272a;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3f3f46;
+  }
+}
+
+/* Glassmorphism utilities */
+@layer utilities {
+  .glass-panel {
+    @apply bg-background/80 backdrop-blur-xl border border-border/50 shadow-lg shadow-black/20;
+  }
+  
+  .glow-effect {
+    @apply shadow-[0_0_20px_rgba(99,102,241,0.15)] hover:shadow-[0_0_30px_rgba(99,102,241,0.25)] transition-shadow duration-300;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-violet-400;
+  }
+
+  .markdown-content {
+    @apply prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-border/50 prose-pre:rounded-xl;
+  }
+}
