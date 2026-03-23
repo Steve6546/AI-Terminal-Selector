@@ -576,15 +576,23 @@ export const useUpdateAnthropicConversation = <
 };
 
 // ─── Auto-name ────────────────────────────────────────────────────────────────
-export const getAutoNameAnthropicConversationUrl = (id: number) =>
-  `/api/anthropic/conversations/${id}/auto-name`;
+export const getAutoNameAnthropicConversationUrl = (id: number, force?: boolean) => {
+  const url = `/api/anthropic/conversations/${id}/auto-name`;
+  return force ? `${url}?force=true` : url;
+};
 
+/**
+ * autoNameAnthropicConversation — calls the auto-name endpoint.
+ * When force=false (default), the server only renames if the title is still a default placeholder.
+ * When force=true, the server always renames (for manual "Auto-name with AI" action).
+ */
 export const autoNameAnthropicConversation = async (
   id: number,
+  force?: boolean,
   options?: RequestInit,
 ): Promise<AutoNameConversationResult> => {
   return customFetch<AutoNameConversationResult>(
-    getAutoNameAnthropicConversationUrl(id),
+    getAutoNameAnthropicConversationUrl(id, force),
     { ...options, method: "POST" },
   );
 };
@@ -596,17 +604,17 @@ export const useAutoNameAnthropicConversation = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof autoNameAnthropicConversation>>,
     TError,
-    { id: number },
+    { id: number; force?: boolean },
     TContext
   >;
 }): UseMutationResult<
   Awaited<ReturnType<typeof autoNameAnthropicConversation>>,
   TError,
-  { id: number },
+  { id: number; force?: boolean },
   TContext
 > => {
   return useMutation({
-    mutationFn: ({ id }) => autoNameAnthropicConversation(id),
+    mutationFn: ({ id, force }) => autoNameAnthropicConversation(id, force),
     ...options?.mutation,
   });
 };

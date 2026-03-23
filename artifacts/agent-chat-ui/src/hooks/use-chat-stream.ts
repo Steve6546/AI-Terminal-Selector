@@ -130,11 +130,13 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
       if (error.name === "AbortError") {
-        // User stopped — normal
+        // User stopped — normal, don't trigger auto-name
       } else {
         console.error("Stream error:", error);
         onError?.(error);
       }
+      // Don't trigger auto-naming on error or abort
+      return;
     } finally {
       setIsStreaming(false);
       setLiveExecutions([]);
@@ -148,15 +150,17 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
         queryKey: getListAnthropicConversationsQueryKey(),
       });
       onFinish?.();
-
-      // Trigger AI-based auto-naming after the first reply (asynchronously, don't block)
-      autoNameAnthropicConversation(conversationId)
-        .then((result) => {
-          queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
-          onAutoNamed?.(result.title);
-        })
-        .catch(() => { /* ignore auto-naming failures */ });
     }
+
+    // Trigger AI-based auto-naming only after a successful stream,
+    // but only if the title is still the default (hasn't been manually renamed).
+    // This is checked server-side: the endpoint is a no-op if no messages exist.
+    autoNameAnthropicConversation(conversationId)
+      .then((result) => {
+        queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
+        onAutoNamed?.(result.title);
+      })
+      .catch(() => { /* ignore auto-naming failures silently */ });
   }, [conversationId, model, mode, queryClient, onFinish, onError, onAutoNamed]);
 
   const stopStream = useCallback(() => {

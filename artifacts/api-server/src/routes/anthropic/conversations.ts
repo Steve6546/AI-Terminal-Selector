@@ -873,13 +873,27 @@ router.post("/conversations/:id/messages", async (req, res) => {
 });
 
 // ─── POST /conversations/:id/auto-name ────────────────────────────────────────
-// Use Claude to generate a concise title from the first two messages
+// Use Claude to generate a concise title from the first two messages.
+// When called automatically (query param force=false or absent), this is a no-op
+// if the title has already been manually set (i.e., not a default placeholder).
+// Pass ?force=true to override any existing title (e.g., from sidebar "Auto-name with AI").
+const DEFAULT_TITLES = new Set(["New Chat", "New Conversation"]);
+
 router.post("/conversations/:id/auto-name", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    const force = req.query.force === "true";
+
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
     if (!conv) {
       res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    // When not forced, only auto-name if the title is still a default placeholder.
+    // This prevents overwriting manually-set titles when called after every message.
+    if (!force && !DEFAULT_TITLES.has(conv.title)) {
+      res.json({ title: conv.title });
       return;
     }
 
@@ -888,9 +902,10 @@ router.post("/conversations/:id/auto-name", async (req, res) => {
       .from(messages)
       .where(eq(messages.conversationId, id))
       .orderBy(messages.createdAt)
-      .limit(4);
+      .limit(2);
 
-    if (msgs.length === 0) {
+    if (msgs.length < 2) {
+      // Need at least one user + one assistant message for a meaningful title
       res.json({ title: conv.title });
       return;
     }

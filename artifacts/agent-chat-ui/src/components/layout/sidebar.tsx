@@ -136,7 +136,8 @@ export function Sidebar() {
   const handleAutoName = (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
-    autoNameMutation.mutate({ id }, { onSuccess: () => invalidate() });
+    // force=true: user explicitly wants to rename even if title was manually set
+    autoNameMutation.mutate({ id, force: true }, { onSuccess: () => invalidate() });
   };
 
   const handleExport = (e: React.MouseEvent, id: number, fmt: "json" | "markdown") => {
