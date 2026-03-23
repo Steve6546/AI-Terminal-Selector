@@ -1,10 +1,14 @@
 import { EventEmitter } from "events";
 
+export type McpServerStatus = "connected" | "checking" | "degraded" | "auth_required" | "error" | "disconnected";
+
 export interface ServerStatusEvent {
   serverId: number;
   name: string;
-  status: "connected" | "error";
+  status: McpServerStatus;
   lastCheckedAt: string;
+  latencyMs?: number;
+  errorMessage?: string;
 }
 
 class ServerStatusEmitter extends EventEmitter {
