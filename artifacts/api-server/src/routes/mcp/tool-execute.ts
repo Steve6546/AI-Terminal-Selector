@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { executeMcpTool } from "../../lib/mcp-gateway";
 import { handleRouteError } from "../../lib/handle-error";
 import { unmaskSecret } from "../../lib/secret-utils";
+import { checkEndpointAllowed } from "../../lib/domain-allowlist";
 
 const router: IRouter = Router();
 
@@ -44,6 +45,12 @@ router.post("/mcp-tools/:toolId/execute", async (req, res) => {
 
     if (!tool.enabled) {
       res.status(400).json({ error: "Tool is disabled" });
+      return;
+    }
+
+    const allowCheck = await checkEndpointAllowed(server.endpoint, server.transportType);
+    if (!allowCheck.allowed) {
+      res.status(403).json({ error: allowCheck.reason ?? "Endpoint not allowed by domain allowlist" });
       return;
     }
 

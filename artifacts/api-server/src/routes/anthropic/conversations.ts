@@ -11,6 +11,7 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { executeMcpTool } from "../../lib/mcp-gateway";
 import { handleRouteError } from "../../lib/handle-error";
 import { unmaskSecret } from "../../lib/secret-utils";
+import { checkEndpointAllowed } from "../../lib/domain-allowlist";
 
 const router: IRouter = Router();
 
@@ -567,20 +568,28 @@ router.post("/conversations/:id/messages", async (req, res) => {
           let execResult: { success: boolean; content?: unknown; error?: string };
 
           if (servConfig) {
-            execResult = await executeMcpTool(
-              {
-                transportType: servConfig.transportType,
-                endpoint: servConfig.endpoint,
-                command: servConfig.command,
-                args: (servConfig.args as string[]) ?? [],
-                authType: servConfig.authType,
-                authSecret: unmaskSecret(servConfig.encryptedSecret),
-                timeout: servConfig.timeout,
-                retryCount: servConfig.retryCount,
-              },
-              rawToolName,
-              block.input
-            );
+            const runtimeAllowCheck = await checkEndpointAllowed(servConfig.endpoint, servConfig.transportType);
+            if (!runtimeAllowCheck.allowed) {
+              execResult = {
+                success: false,
+                error: runtimeAllowCheck.reason ?? "Endpoint not allowed by domain allowlist",
+              };
+            } else {
+              execResult = await executeMcpTool(
+                {
+                  transportType: servConfig.transportType,
+                  endpoint: servConfig.endpoint,
+                  command: servConfig.command,
+                  args: (servConfig.args as string[]) ?? [],
+                  authType: servConfig.authType,
+                  authSecret: unmaskSecret(servConfig.encryptedSecret),
+                  timeout: servConfig.timeout,
+                  retryCount: servConfig.retryCount,
+                },
+                rawToolName,
+                block.input
+              );
+            }
           } else {
             execResult = { success: false, error: "Server not found" };
           }
@@ -716,24 +725,29 @@ router.post("/conversations/:id/messages", async (req, res) => {
       let execSuccess = false;
       let execError = "";
 
-      try {
-        execResult = await executeMcpTool(
-          {
-            transportType: server.transportType,
-            endpoint: server.endpoint,
-            command: server.command,
-            args: (server.args as string[]) ?? [],
-            authType: server.authType,
-            authSecret: unmaskSecret(server.encryptedSecret),
-            timeout: server.timeout,
-            retryCount: server.retryCount,
-          },
-          selectedToolName,
-          toolArgs
-        );
-        execSuccess = execResult.success;
-      } catch (err) {
-        execError = err instanceof Error ? err.message : String(err);
+      const runtimeAllowCheck = await checkEndpointAllowed(server.endpoint, server.transportType);
+      if (!runtimeAllowCheck.allowed) {
+        execError = runtimeAllowCheck.reason ?? "Endpoint not allowed by domain allowlist";
+      } else {
+        try {
+          execResult = await executeMcpTool(
+            {
+              transportType: server.transportType,
+              endpoint: server.endpoint,
+              command: server.command,
+              args: (server.args as string[]) ?? [],
+              authType: server.authType,
+              authSecret: unmaskSecret(server.encryptedSecret),
+              timeout: server.timeout,
+              retryCount: server.retryCount,
+            },
+            selectedToolName,
+            toolArgs
+          );
+          execSuccess = execResult.success;
+        } catch (err) {
+          execError = err instanceof Error ? err.message : String(err);
+        }
       }
 
       const durationMs = Date.now() - execStart;

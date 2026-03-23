@@ -157,6 +157,25 @@ router.patch("/mcp-servers/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     const body = UpdateMcpServerBody.parse(req.body);
 
+    const [existing] = await db
+      .select({ endpoint: mcpServers.endpoint, transportType: mcpServers.transportType })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, id));
+
+    if (!existing) {
+      res.status(404).json({ error: "Server not found" });
+      return;
+    }
+
+    const effectiveEndpoint = body.endpoint !== undefined ? body.endpoint : existing.endpoint;
+    const effectiveTransportType = body.transportType !== undefined ? body.transportType : existing.transportType;
+
+    const allowCheck = await checkEndpointAllowed(effectiveEndpoint, effectiveTransportType);
+    if (!allowCheck.allowed) {
+      res.status(403).json({ error: allowCheck.reason ?? "Endpoint not allowed by domain allowlist" });
+      return;
+    }
+
     const updateData: Partial<typeof mcpServers.$inferInsert> = {
       updatedAt: new Date(),
     };
