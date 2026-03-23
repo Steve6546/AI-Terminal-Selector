@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import {
   useListMcpServers,
@@ -9,9 +9,10 @@ import {
   useDiscoverMcpTools,
   useListMcpTools,
   useListMcpResources,
+  useListMcpPrompts,
   useUpdateMcpTool,
 } from "@workspace/api-client-react";
-import type { McpServer, McpTool, McpResource } from "@workspace/api-client-react";
+import type { McpServer, McpTool, McpResource, McpPrompt } from "@workspace/api-client-react";
 import {
   Server,
   Plus,
@@ -21,6 +22,7 @@ import {
   RefreshCcw,
   Zap,
   ChevronRight,
+  ChevronDown,
   Wrench,
   Database,
   MessageSquare,
@@ -32,21 +34,33 @@ import {
   EyeOff,
   Shield,
   ShieldAlert,
+  Code2,
 } from "lucide-react";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListMcpServersQueryKey, getListMcpToolsQueryKey, getListMcpResourcesQueryKey } from "@workspace/api-client-react";
+import {
+  getListMcpServersQueryKey,
+  getListMcpToolsQueryKey,
+  getListMcpResourcesQueryKey,
+  getListMcpPromptsQueryKey,
+} from "@workspace/api-client-react";
+
+type AuthType = "none" | "bearer" | "api-key";
+type TransportType = "stdio" | "streamable-http";
 
 interface ServerForm {
   name: string;
   description: string;
-  transportType: "stdio" | "streamable-http";
+  transportType: TransportType;
   endpoint: string;
   command: string;
-  authType: "none" | "bearer" | "basic";
+  args: string;
+  authType: AuthType;
   authSecret: string;
   timeout: number;
+  retryCount: number;
+  enabled: boolean;
 }
 
 const DEFAULT_FORM: ServerForm = {
@@ -55,9 +69,12 @@ const DEFAULT_FORM: ServerForm = {
   transportType: "streamable-http",
   endpoint: "",
   command: "",
+  args: "",
   authType: "none",
   authSecret: "",
   timeout: 30,
+  retryCount: 3,
+  enabled: true,
 };
 
 function StatusDot({ status }: { status: string }) {
@@ -93,6 +110,28 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
+function CollapsibleJson({ schema }: { schema: Record<string, unknown> | null | undefined }) {
+  const [open, setOpen] = useState(false);
+  if (!schema || Object.keys(schema).length === 0) return null;
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-white transition-colors"
+      >
+        <Code2 className="w-3 h-3" />
+        <span>{open ? "Hide" : "View"} schema</span>
+        <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <pre className="mt-1.5 text-xs bg-black/40 rounded-lg p-2 overflow-x-auto text-muted-foreground border border-white/5 max-h-48">
+          {JSON.stringify(schema, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function ToolCard({ tool }: { tool: McpTool }) {
   const updateTool = useUpdateMcpTool();
   const queryClient = useQueryClient();
@@ -116,6 +155,7 @@ function ToolCard({ tool }: { tool: McpTool }) {
           {tool.description && (
             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{tool.description}</p>
           )}
+          <CollapsibleJson schema={tool.inputSchema as Record<string, unknown> | null} />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
@@ -167,6 +207,22 @@ function ResourceCard({ resource }: { resource: McpResource }) {
   );
 }
 
+function PromptCard({ prompt }: { prompt: McpPrompt }) {
+  return (
+    <div className="p-3 rounded-xl bg-secondary/30 border border-white/5">
+      <div className="flex items-start gap-2">
+        <MessageSquare className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white font-mono truncate">{prompt.promptName}</p>
+          {prompt.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{prompt.description}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CapabilitiesDrawer({
   server,
   onClose,
@@ -174,9 +230,10 @@ function CapabilitiesDrawer({
   server: McpServer;
   onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"tools" | "resources">("tools");
+  const [activeTab, setActiveTab] = useState<"tools" | "resources" | "prompts">("tools");
   const { data: tools, isLoading: toolsLoading } = useListMcpTools(server.id);
   const { data: resources, isLoading: resourcesLoading } = useListMcpResources(server.id);
+  const { data: prompts, isLoading: promptsLoading } = useListMcpPrompts(server.id);
   const discoverMutation = useDiscoverMcpTools();
   const queryClient = useQueryClient();
 
@@ -188,10 +245,17 @@ function CapabilitiesDrawer({
           queryClient.invalidateQueries({ queryKey: getListMcpServersQueryKey() });
           queryClient.invalidateQueries({ queryKey: getListMcpToolsQueryKey(server.id) });
           queryClient.invalidateQueries({ queryKey: getListMcpResourcesQueryKey(server.id) });
+          queryClient.invalidateQueries({ queryKey: getListMcpPromptsQueryKey(server.id) });
         },
       }
     );
   };
+
+  const tabs = [
+    { key: "tools" as const, label: "Tools", icon: Wrench, count: tools?.length ?? 0 },
+    { key: "resources" as const, label: "Resources", icon: Database, count: resources?.length ?? 0 },
+    { key: "prompts" as const, label: "Prompts", icon: MessageSquare, count: prompts?.length ?? 0 },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -225,26 +289,20 @@ function CapabilitiesDrawer({
         </div>
 
         <div className="flex border-b border-white/5">
-          {(["tools", "resources"] as const).map((tab) => (
+          {tabs.map((tab) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
-                activeTab === tab
+                "flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors",
+                activeTab === tab.key
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-white"
               )}
             >
-              {tab === "tools" ? (
-                <Wrench className="w-3.5 h-3.5" />
-              ) : (
-                <Database className="w-3.5 h-3.5" />
-              )}
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              <span className="text-xs bg-secondary rounded-full px-1.5">
-                {tab === "tools" ? (tools?.length ?? 0) : (resources?.length ?? 0)}
-              </span>
+              <tab.icon className="w-3.5 h-3.5" />
+              {tab.label}
+              <span className="text-xs bg-secondary rounded-full px-1.5">{tab.count}</span>
             </button>
           ))}
         </div>
@@ -259,15 +317,9 @@ function CapabilitiesDrawer({
           {activeTab === "tools" && (
             <div className="space-y-2">
               {toolsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                </div>
+                <EmptyLoading />
               ) : !tools?.length ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  <Wrench className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p>No tools discovered yet</p>
-                  <p className="text-xs mt-1">Click Rediscover to fetch tools from this server</p>
-                </div>
+                <EmptyTab icon={Wrench} label="No tools discovered" hint="Click Rediscover to fetch tools" />
               ) : (
                 tools.map((tool) => <ToolCard key={tool.id} tool={tool} />)
               )}
@@ -276,17 +328,22 @@ function CapabilitiesDrawer({
           {activeTab === "resources" && (
             <div className="space-y-2">
               {resourcesLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                </div>
+                <EmptyLoading />
               ) : !resources?.length ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  <Database className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p>No resources discovered yet</p>
-                  <p className="text-xs mt-1">Click Rediscover to fetch resources from this server</p>
-                </div>
+                <EmptyTab icon={Database} label="No resources discovered" hint="Click Rediscover to fetch resources" />
               ) : (
                 resources.map((r) => <ResourceCard key={r.id} resource={r} />)
+              )}
+            </div>
+          )}
+          {activeTab === "prompts" && (
+            <div className="space-y-2">
+              {promptsLoading ? (
+                <EmptyLoading />
+              ) : !prompts?.length ? (
+                <EmptyTab icon={MessageSquare} label="No prompts discovered" hint="Click Rediscover to fetch prompts" />
+              ) : (
+                prompts.map((p) => <PromptCard key={p.id} prompt={p} />)
               )}
             </div>
           )}
@@ -296,19 +353,28 @@ function CapabilitiesDrawer({
   );
 }
 
-interface FormFieldProps {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
+function EmptyLoading() {
+  return (
+    <div className="flex items-center justify-center py-8">
+      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+    </div>
+  );
 }
 
-function FormField({ label, required, children }: FormFieldProps) {
+function EmptyTab({
+  icon: Icon,
+  label,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  hint: string;
+}) {
   return (
-    <div>
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        {label} {required && <span className="text-destructive">*</span>}
-      </label>
-      <div className="mt-1">{children}</div>
+    <div className="text-center py-8 text-muted-foreground text-sm">
+      <Icon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+      <p>{label}</p>
+      <p className="text-xs mt-1">{hint}</p>
     </div>
   );
 }
@@ -317,6 +383,25 @@ function inputCls(extra?: string) {
   return cn(
     "w-full bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors",
     extra
+  );
+}
+
+interface FormFieldProps {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+  hint?: string;
+}
+
+function FormField({ label, required, children, hint }: FormFieldProps) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        {label} {required && <span className="text-destructive">*</span>}
+      </label>
+      <div className="mt-1">{children}</div>
+      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+    </div>
   );
 }
 
@@ -336,12 +421,15 @@ function ServerFormDialog({
       ? {
           name: server.name,
           description: server.description ?? "",
-          transportType: server.transportType as "stdio" | "streamable-http",
+          transportType: server.transportType as TransportType,
           endpoint: server.endpoint ?? "",
           command: server.command ?? "",
-          authType: (server.authType as "none" | "bearer" | "basic") ?? "none",
+          args: (server.args ?? []).join(" "),
+          authType: (server.authType as AuthType) ?? "none",
           authSecret: "",
-          timeout: 30,
+          timeout: server.timeout ?? 30,
+          retryCount: server.retryCount ?? 3,
+          enabled: server.enabled,
         }
       : DEFAULT_FORM
   );
@@ -355,17 +443,22 @@ function ServerFormDialog({
     (form.transportType === "streamable-http" ? form.endpoint.trim() : form.command.trim()) &&
     !isPending;
 
+  const buildPayload = () => ({
+    name: form.name.trim(),
+    description: form.description.trim() || undefined,
+    transportType: form.transportType,
+    endpoint: form.transportType === "streamable-http" ? form.endpoint.trim() : undefined,
+    command: form.transportType === "stdio" ? form.command.trim() : undefined,
+    args: form.args.trim() ? form.args.trim().split(/\s+/) : [],
+    authType: form.authType,
+    authSecret: form.authSecret.trim() || undefined,
+    timeout: form.timeout,
+    retryCount: form.retryCount,
+    enabled: form.enabled,
+  });
+
   const handleSubmit = () => {
-    const payload = {
-      name: form.name.trim(),
-      description: form.description.trim() || undefined,
-      transportType: form.transportType,
-      endpoint: form.transportType === "streamable-http" ? form.endpoint.trim() : undefined,
-      command: form.transportType === "stdio" ? form.command.trim() : undefined,
-      authType: form.authType,
-      authSecret: form.authSecret.trim() || undefined,
-      timeout: form.timeout,
-    };
+    const payload = buildPayload();
 
     if (isEditing) {
       updateMutation.mutate(
@@ -390,6 +483,10 @@ function ServerFormDialog({
     }
   };
 
+  const up = <K extends keyof ServerForm>(key: K) =>
+    (value: ServerForm[K]) =>
+      setForm((f) => ({ ...f, [key]: value }));
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="glass-panel rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar border border-white/10">
@@ -410,7 +507,7 @@ function ServerFormDialog({
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => up("name")(e.target.value)}
               placeholder="My MCP Server"
               className={inputCls()}
             />
@@ -420,7 +517,7 @@ function ServerFormDialog({
             <input
               type="text"
               value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              onChange={(e) => up("description")(e.target.value)}
               placeholder="Optional description"
               className={inputCls()}
             />
@@ -431,7 +528,7 @@ function ServerFormDialog({
               {(["streamable-http", "stdio"] as const).map((t) => (
                 <button
                   key={t}
-                  onClick={() => setForm({ ...form, transportType: t })}
+                  onClick={() => up("transportType")(t)}
                   className={cn(
                     "py-2.5 px-3 rounded-xl text-sm font-medium transition-colors border",
                     form.transportType === t
@@ -450,38 +547,44 @@ function ServerFormDialog({
               <input
                 type="url"
                 value={form.endpoint}
-                onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+                onChange={(e) => up("endpoint")(e.target.value)}
                 placeholder="https://my-mcp-server.example.com/mcp"
                 className={inputCls()}
               />
             </FormField>
           ) : (
-            <FormField label="Command" required>
-              <input
-                type="text"
-                value={form.command}
-                onChange={(e) => setForm({ ...form, command: e.target.value })}
-                placeholder="npx @modelcontextprotocol/server-filesystem /path"
-                className={inputCls("font-mono")}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Full shell command to launch the MCP server process
-              </p>
-            </FormField>
+            <>
+              <FormField label="Command" required hint="Full shell command to launch the MCP server process">
+                <input
+                  type="text"
+                  value={form.command}
+                  onChange={(e) => up("command")(e.target.value)}
+                  placeholder="npx @modelcontextprotocol/server-filesystem"
+                  className={inputCls("font-mono")}
+                />
+              </FormField>
+              <FormField label="Additional Args" hint="Space-separated extra arguments appended to the command">
+                <input
+                  type="text"
+                  value={form.args}
+                  onChange={(e) => up("args")(e.target.value)}
+                  placeholder="/path/to/files --flag"
+                  className={inputCls("font-mono")}
+                />
+              </FormField>
+            </>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <FormField label="Auth Type">
               <select
                 value={form.authType}
-                onChange={(e) =>
-                  setForm({ ...form, authType: e.target.value as "none" | "bearer" | "basic" })
-                }
+                onChange={(e) => up("authType")(e.target.value as AuthType)}
                 className={inputCls()}
               >
                 <option value="none">None</option>
                 <option value="bearer">Bearer Token</option>
-                <option value="basic">Basic Auth</option>
+                <option value="api-key">API Key</option>
               </select>
             </FormField>
 
@@ -491,20 +594,34 @@ function ServerFormDialog({
                 min={5}
                 max={300}
                 value={form.timeout}
-                onChange={(e) => setForm({ ...form, timeout: parseInt(e.target.value) || 30 })}
+                onChange={(e) => up("timeout")(parseInt(e.target.value) || 30)}
+                className={inputCls()}
+              />
+            </FormField>
+
+            <FormField label="Max Retries">
+              <input
+                type="number"
+                min={0}
+                max={10}
+                value={form.retryCount}
+                onChange={(e) => up("retryCount")(parseInt(e.target.value) || 0)}
                 className={inputCls()}
               />
             </FormField>
           </div>
 
           {form.authType !== "none" && (
-            <FormField label={form.authType === "bearer" ? "Bearer Token" : "Credentials"}>
+            <FormField
+              label={form.authType === "bearer" ? "Bearer Token" : "API Key"}
+              hint={isEditing ? "Leave blank to keep existing secret" : undefined}
+            >
               <div className="relative">
                 <input
                   type={showSecret ? "text" : "password"}
                   value={form.authSecret}
-                  onChange={(e) => setForm({ ...form, authSecret: e.target.value })}
-                  placeholder={form.authType === "bearer" ? "your-token" : "user:password"}
+                  onChange={(e) => up("authSecret")(e.target.value)}
+                  placeholder={form.authType === "bearer" ? "your-bearer-token" : "your-api-key"}
                   className={inputCls("pr-10")}
                 />
                 <button
@@ -515,13 +632,29 @@ function ServerFormDialog({
                   {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              {isEditing && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Leave blank to keep existing secret
-                </p>
-              )}
             </FormField>
           )}
+
+          <div className="flex items-center justify-between py-2 px-3 bg-secondary/30 rounded-xl border border-white/5">
+            <div>
+              <p className="text-sm font-medium text-white">Enabled</p>
+              <p className="text-xs text-muted-foreground">Allow agent to use this server</p>
+            </div>
+            <button
+              onClick={() => up("enabled")(!form.enabled)}
+              className={cn(
+                "relative w-11 h-6 rounded-full transition-colors",
+                form.enabled ? "bg-primary" : "bg-secondary"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform",
+                  form.enabled ? "translate-x-6" : "translate-x-1"
+                )}
+              />
+            </button>
+          </div>
         </div>
 
         {isError && (
@@ -604,6 +737,7 @@ function ServerCard({
           queryClient.invalidateQueries({ queryKey: getListMcpServersQueryKey() });
           queryClient.invalidateQueries({ queryKey: getListMcpToolsQueryKey(server.id) });
           queryClient.invalidateQueries({ queryKey: getListMcpResourcesQueryKey(server.id) });
+          queryClient.invalidateQueries({ queryKey: getListMcpPromptsQueryKey(server.id) });
         },
       }
     );
@@ -651,6 +785,11 @@ function ServerCard({
         <span className="text-xs bg-secondary rounded-lg px-2 py-0.5 text-muted-foreground">
           {server.toolCount ?? 0} tools
         </span>
+        {!server.enabled && (
+          <span className="text-xs bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-lg px-2 py-0.5">
+            disabled
+          </span>
+        )}
         {server.endpoint && (
           <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
             {server.endpoint}
@@ -722,7 +861,7 @@ function ServerCard({
         <button
           onClick={onOpenCapabilities}
           className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium bg-secondary hover:bg-secondary/80 text-white rounded-xl transition-colors"
-          title="View tools & resources"
+          title="View tools, resources & prompts"
         >
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
@@ -791,8 +930,7 @@ export default function McpServersPage() {
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">No servers connected</h3>
               <p className="text-muted-foreground max-w-sm mb-6">
-                Connect your first MCP server to give the agent access to databases, APIs, and file
-                systems.
+                Connect your first MCP server to give the agent access to databases, APIs, and file systems.
               </p>
               <button
                 onClick={() => setShowFormDialog(true)}

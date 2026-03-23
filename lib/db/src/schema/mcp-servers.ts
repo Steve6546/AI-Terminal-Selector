@@ -47,6 +47,16 @@ export const mcpResources = pgTable("mcp_resources", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const mcpPrompts = pgTable("mcp_prompts", {
+  id: serial("id").primaryKey(),
+  serverId: integer("server_id")
+    .notNull()
+    .references(() => mcpServers.id, { onDelete: "cascade" }),
+  promptName: text("prompt_name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const insertMcpServerSchema = createInsertSchema(mcpServers).omit({
   id: true,
   createdAt: true,

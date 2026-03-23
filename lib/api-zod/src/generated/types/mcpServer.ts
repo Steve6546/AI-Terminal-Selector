@@ -18,6 +18,8 @@ export interface McpServer {
   command?: string;
   args?: string[];
   authType?: McpServerAuthType;
+  timeout?: number;
+  retryCount?: number;
   status: McpServerStatus;
   enabled: boolean;
   toolCount: number;

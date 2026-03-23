@@ -12,5 +12,5 @@ export type CreateMcpServerBodyAuthType =
 export const CreateMcpServerBodyAuthType = {
   none: "none",
   bearer: "bearer",
-  basic: "basic",
+  "api-key": "api-key",
 } as const;

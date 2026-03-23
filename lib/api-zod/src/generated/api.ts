@@ -137,7 +137,9 @@ export const ListMcpServersResponseItem = zod.object({
   endpoint: zod.string().optional(),
   command: zod.string().optional(),
   args: zod.array(zod.string()).optional(),
-  authType: zod.enum(["none", "bearer", "basic"]).optional(),
+  authType: zod.enum(["none", "bearer", "api-key"]).optional(),
+  timeout: zod.number().optional(),
+  retryCount: zod.number().optional(),
   status: zod.enum(["connected", "disconnected", "checking", "error"]),
   enabled: zod.boolean(),
   toolCount: zod.number(),
@@ -160,7 +162,7 @@ export const CreateMcpServerBody = zod.object({
   endpoint: zod.string().optional(),
   command: zod.string().optional(),
   args: zod.array(zod.string()).optional(),
-  authType: zod.enum(["none", "bearer", "basic"]).optional(),
+  authType: zod.enum(["none", "bearer", "api-key"]).optional(),
   authSecret: zod.string().optional(),
   timeout: zod.number().default(createMcpServerBodyTimeoutDefault),
   retryCount: zod.number().default(createMcpServerBodyRetryCountDefault),
@@ -182,7 +184,9 @@ export const GetMcpServerResponse = zod.object({
   endpoint: zod.string().optional(),
   command: zod.string().optional(),
   args: zod.array(zod.string()).optional(),
-  authType: zod.enum(["none", "bearer", "basic"]).optional(),
+  authType: zod.enum(["none", "bearer", "api-key"]).optional(),
+  timeout: zod.number().optional(),
+  retryCount: zod.number().optional(),
   status: zod.enum(["connected", "disconnected", "checking", "error"]),
   enabled: zod.boolean(),
   toolCount: zod.number(),
@@ -204,7 +208,7 @@ export const UpdateMcpServerBody = zod.object({
   endpoint: zod.string().optional(),
   command: zod.string().optional(),
   args: zod.array(zod.string()).optional(),
-  authType: zod.enum(["none", "bearer", "basic"]).optional(),
+  authType: zod.enum(["none", "bearer", "api-key"]).optional(),
   authSecret: zod.string().optional(),
   timeout: zod.number().optional(),
   retryCount: zod.number().optional(),
@@ -219,7 +223,9 @@ export const UpdateMcpServerResponse = zod.object({
   endpoint: zod.string().optional(),
   command: zod.string().optional(),
   args: zod.array(zod.string()).optional(),
-  authType: zod.enum(["none", "bearer", "basic"]).optional(),
+  authType: zod.enum(["none", "bearer", "api-key"]).optional(),
+  timeout: zod.number().optional(),
+  retryCount: zod.number().optional(),
   status: zod.enum(["connected", "disconnected", "checking", "error"]),
   enabled: zod.boolean(),
   toolCount: zod.number(),
@@ -289,6 +295,22 @@ export const ListMcpToolsResponseItem = zod.object({
   createdAt: zod.date(),
 });
 export const ListMcpToolsResponse = zod.array(ListMcpToolsResponseItem);
+
+/**
+ * @summary List prompts discovered from an MCP server
+ */
+export const ListMcpPromptsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListMcpPromptsResponseItem = zod.object({
+  id: zod.number(),
+  serverId: zod.number(),
+  promptName: zod.string(),
+  description: zod.string().optional(),
+  createdAt: zod.date(),
+});
+export const ListMcpPromptsResponse = zod.array(ListMcpPromptsResponseItem);
 
 /**
  * @summary List resources discovered from an MCP server

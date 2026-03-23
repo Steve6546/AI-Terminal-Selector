@@ -333,6 +333,27 @@ paths:
                 items:
                   $ref: "#/components/schemas/McpTool"
 
+  /mcp-servers/{id}/prompts:
+    get:
+      operationId: listMcpPrompts
+      tags: [mcpTools]
+      summary: List prompts discovered from an MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of prompts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/McpPrompt"
+
   /mcp-servers/{id}/resources:
     get:
       operationId: listMcpResources
@@ -670,7 +691,11 @@ components:
             type: string
         authType:
           type: string
-          enum: [none, bearer, basic]
+          enum: [none, bearer, api-key]
+        timeout:
+          type: integer
+        retryCount:
+          type: integer
         status:
           type: string
           enum: [connected, disconnected, checking, error]
@@ -713,7 +738,7 @@ components:
             type: string
         authType:
           type: string
-          enum: [none, bearer, basic]
+          enum: [none, bearer, api-key]
         authSecret:
           type: string
         timeout:
@@ -749,7 +774,7 @@ components:
             type: string
         authType:
           type: string
-          enum: [none, bearer, basic]
+          enum: [none, bearer, api-key]
         authSecret:
           type: string
         timeout:
@@ -829,6 +854,26 @@ components:
         - serverId
         - resourceName
         - resourceType
+        - createdAt
+
+    McpPrompt:
+      type: object
+      properties:
+        id:
+          type: integer
+        serverId:
+          type: integer
+        promptName:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - serverId
+        - promptName
         - createdAt
 
     UpdateMcpToolBody:

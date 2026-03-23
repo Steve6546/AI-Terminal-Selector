@@ -12,5 +12,5 @@ export type McpServerAuthType =
 export const McpServerAuthType = {
   none: "none",
   bearer: "bearer",
-  basic: "basic",
+  "api-key": "api-key",
 } as const;

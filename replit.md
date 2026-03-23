@@ -49,6 +49,7 @@ scripts/                # Utility scripts
 - `mcp_servers` — MCP server configs (transport, auth, status)
 - `mcp_tools` — Discovered tools per server
 - `mcp_resources` — Resources per server
+- `mcp_prompts` — Prompt templates per server
 - `executions` — Tool execution records with timeline
 - `execution_logs` — Per-execution log entries
 - `settings` — Key/value app settings
@@ -63,6 +64,8 @@ scripts/                # Utility scripts
 - `POST /api/mcp-servers/:id/test` — test connection
 - `POST /api/mcp-servers/:id/discover` — discover tools
 - `GET /api/mcp-servers/:id/tools` — list server tools
+- `GET /api/mcp-servers/:id/resources` — list server resources
+- `GET /api/mcp-servers/:id/prompts` — list server prompts
 - `PATCH /api/mcp-tools/:toolId` — update tool
 - `GET /api/system/status` — system health (connected servers, tool count, agent state)
 - `GET/PUT /api/settings` — get/update app settings

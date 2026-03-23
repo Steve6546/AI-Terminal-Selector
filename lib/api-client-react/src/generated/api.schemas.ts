@@ -93,7 +93,7 @@ export type McpServerAuthType =
 export const McpServerAuthType = {
   none: "none",
   bearer: "bearer",
-  basic: "basic",
+  "api-key": "api-key",
 } as const;
 
 export type McpServerStatus =
@@ -115,6 +115,8 @@ export interface McpServer {
   command?: string;
   args?: string[];
   authType?: McpServerAuthType;
+  timeout?: number;
+  retryCount?: number;
   status: McpServerStatus;
   enabled: boolean;
   toolCount: number;
@@ -136,7 +138,7 @@ export type CreateMcpServerBodyAuthType =
 export const CreateMcpServerBodyAuthType = {
   none: "none",
   bearer: "bearer",
-  basic: "basic",
+  "api-key": "api-key",
 } as const;
 
 export interface CreateMcpServerBody {
@@ -167,7 +169,7 @@ export type UpdateMcpServerBodyAuthType =
 export const UpdateMcpServerBodyAuthType = {
   none: "none",
   bearer: "bearer",
-  basic: "basic",
+  "api-key": "api-key",
 } as const;
 
 export interface UpdateMcpServerBody {
@@ -217,6 +219,14 @@ export interface McpResource {
   description?: string;
   resourceType: string;
   metadata?: McpResourceMetadata;
+  createdAt: string;
+}
+
+export interface McpPrompt {
+  id: number;
+  serverId: number;
+  promptName: string;
+  description?: string;
   createdAt: string;
 }
 

@@ -10,7 +10,7 @@ import {
 import { maskSecret, unmaskSecret } from "../../lib/secret-utils";
 import { handleRouteError } from "../../lib/handle-error";
 import { testMcpConnection, discoverMcpCapabilities } from "../../lib/mcp-gateway";
-import { mcpResources } from "@workspace/db";
+import { mcpResources, mcpPrompts } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -48,6 +48,8 @@ router.get("/mcp-servers", async (req, res) => {
         command: s.command,
         args: s.args,
         authType: s.authType,
+        timeout: s.timeout,
+        retryCount: s.retryCount,
         status: s.status,
         enabled: s.enabled,
         toolCount: Number(s.toolCount),
@@ -309,9 +311,10 @@ router.post("/mcp-servers/:id/discover", async (req, res) => {
       throw discoveryErr;
     }
 
-    // Clear and re-insert tools
+    // Clear and re-insert tools, resources, and prompts
     await db.delete(mcpTools).where(eq(mcpTools.serverId, id));
     await db.delete(mcpResources).where(eq(mcpResources.serverId, id));
+    await db.delete(mcpPrompts).where(eq(mcpPrompts.serverId, id));
 
     let insertedTools: typeof mcpTools.$inferSelect[] = [];
     if (discovered.tools.length > 0) {
@@ -339,6 +342,16 @@ router.post("/mcp-servers/:id/discover", async (req, res) => {
           description: r.description,
           resourceType: r.mimeType ?? "unknown",
           metadata: { uri: r.uri } as Record<string, unknown>,
+        }))
+      );
+    }
+
+    if (discovered.prompts.length > 0) {
+      await db.insert(mcpPrompts).values(
+        discovered.prompts.map((p) => ({
+          serverId: id,
+          promptName: p.name,
+          description: p.description,
         }))
       );
     }
@@ -402,6 +415,39 @@ router.get("/mcp-servers/:id/tools", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list tools");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
+router.get("/mcp-servers/:id/prompts", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [server] = await db
+      .select()
+      .from(mcpServers)
+      .where(eq(mcpServers.id, id));
+
+    if (!server) {
+      res.status(404).json({ error: "Server not found" });
+      return;
+    }
+
+    const prompts = await db
+      .select()
+      .from(mcpPrompts)
+      .where(eq(mcpPrompts.serverId, id));
+
+    res.json(
+      prompts.map((p) => ({
+        id: p.id,
+        serverId: p.serverId,
+        promptName: p.promptName,
+        description: p.description,
+        createdAt: p.createdAt.toISOString(),
+      }))
+    );
+  } catch (err) {
+    req.log.error({ err }, "Failed to list prompts");
     handleRouteError(res, err, "Internal server error");
   }
 });

@@ -31,6 +31,7 @@ import type {
   ListAttachmentsParams,
   ListExecutionsParams,
   McpConnectionTestResult,
+  McpPrompt,
   McpResource,
   McpServer,
   McpTool,
@@ -1410,6 +1411,93 @@ export function useListMcpTools<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListMcpToolsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List prompts discovered from an MCP server
+ */
+export const getListMcpPromptsUrl = (id: number) => {
+  return `/api/mcp-servers/${id}/prompts`;
+};
+
+export const listMcpPrompts = async (
+  id: number,
+  options?: RequestInit,
+): Promise<McpPrompt[]> => {
+  return customFetch<McpPrompt[]>(getListMcpPromptsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMcpPromptsQueryKey = (id: number) => {
+  return [`/api/mcp-servers/${id}/prompts`] as const;
+};
+
+export const getListMcpPromptsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMcpPrompts>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMcpPrompts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMcpPromptsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMcpPrompts>>> = ({
+    signal,
+  }) => listMcpPrompts(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMcpPrompts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMcpPromptsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMcpPrompts>>
+>;
+export type ListMcpPromptsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List prompts discovered from an MCP server
+ */
+
+export function useListMcpPrompts<
+  TData = Awaited<ReturnType<typeof listMcpPrompts>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMcpPrompts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMcpPromptsQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
