@@ -260,7 +260,10 @@ export function Sidebar() {
                   <DropdownMenuTrigger asChild>
                     <button 
                       onClick={e => e.preventDefault()}
-                      className="sm:opacity-0 sm:group-hover:opacity-100 opacity-100 p-1 hover:bg-white/10 rounded-md transition-all flex-shrink-0"
+                      className={cn(
+                        "p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center hover:bg-white/10 rounded-md transition-all flex-shrink-0 focus:opacity-100",
+                        isActive ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover:opacity-100"
+                      )}
                     >
                       <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
                     </button>
@@ -445,24 +448,24 @@ export function Sidebar() {
         {/* Navigation links */}
         <div className="p-3 space-y-1">
           <Link href="/servers" className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+            "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-lg text-sm transition-colors",
             location === "/servers" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
           )}>
-            <Server className="w-4 h-4" />
+            <Server className="w-4 h-4 flex-shrink-0" />
             <span>MCP Servers</span>
           </Link>
           <Link href="/terminal" className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+            "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-lg text-sm transition-colors",
             location === "/terminal" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
           )}>
-            <Terminal className="w-4 h-4" />
+            <Terminal className="w-4 h-4 flex-shrink-0" />
             <span>Terminal</span>
           </Link>
           <Link href="/settings" className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+            "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-lg text-sm transition-colors",
             location === "/settings" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
           )}>
-            <Settings className="w-4 h-4" />
+            <Settings className="w-4 h-4 flex-shrink-0" />
             <span>Settings</span>
           </Link>
         </div>

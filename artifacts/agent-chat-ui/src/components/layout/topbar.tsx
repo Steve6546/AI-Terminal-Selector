@@ -1,6 +1,5 @@
 import { SettingsMapDefaultModel, useGetSystemStatus } from "@workspace/api-client-react";
-import { Settings, Zap, TerminalSquare, Wifi, WifiOff } from "lucide-react";
-import { Link } from "wouter";
+import { Zap, TerminalSquare, Wifi, WifiOff } from "lucide-react";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -117,16 +116,12 @@ export function TopBar({ model, onModelChange, onTerminalToggle }: TopBarProps) 
         {onTerminalToggle && (
           <button
             onClick={onTerminalToggle}
-            className="p-2 text-muted-foreground hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center text-muted-foreground hover:text-white hover:bg-white/10 rounded-lg transition-colors"
             title="Toggle Terminal"
           >
             <TerminalSquare className="w-5 h-5" />
           </button>
         )}
-
-        <Link href="/settings" className="p-2 text-muted-foreground hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-          <Settings className="w-5 h-5" />
-        </Link>
       </div>
     </div>
   );

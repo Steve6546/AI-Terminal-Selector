@@ -272,6 +272,7 @@ export interface Execution {
   serverName?: string;
   toolName: string;
   status: ExecutionStatus;
+  arguments?: Record<string, unknown>;
   startedAt: string;
   completedAt?: string;
   durationMs?: number;

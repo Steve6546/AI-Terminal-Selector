@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, Zap, Code, TerminalSquare, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import {
   Sheet,
   SheetContent,
@@ -272,7 +275,7 @@ export default function ChatPage() {
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
           {!conversationId ? (
-            <div className="h-full flex flex-col items-center justify-center p-8">
+            <div className="min-h-full flex flex-col items-center justify-center p-4 sm:p-8">
               <motion.div
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
@@ -404,7 +407,7 @@ export default function ChatPage() {
                           </div>
                           <div className="text-sm leading-relaxed w-full text-foreground markdown-content">
                             {streamedText ? (
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamedText}</ReactMarkdown>
+                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streamedText}</ReactMarkdown>
                             ) : (
                               <span className="flex gap-1 mt-2">
                                 <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" />
@@ -431,7 +434,7 @@ export default function ChatPage() {
         </AnimatePresence>
 
         {/* Input Area */}
-        <div className="w-full bg-gradient-to-t from-background via-background to-transparent pt-6 shrink-0">
+        <div className="w-full bg-gradient-to-t from-background via-background/95 to-transparent pt-2 shrink-0">
           <ChatInput
             onSend={handleSend}
             onStop={stopStream}

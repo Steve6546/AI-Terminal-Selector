@@ -1,6 +1,9 @@
 import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { format } from "date-fns";
@@ -107,7 +110,7 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
     >
       <div
         className={cn(
-          "flex gap-4 max-w-4xl w-full px-6",
+          "flex gap-4 max-w-4xl w-full px-4 sm:px-6",
           isUser ? "flex-row-reverse" : "flex-row"
         )}
       >
@@ -167,7 +170,7 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
               className={cn(
                 "text-sm leading-relaxed overflow-hidden",
                 isUser
-                  ? "bg-secondary text-secondary-foreground px-5 py-3 rounded-2xl rounded-tr-sm"
+                  ? "bg-secondary text-secondary-foreground px-5 py-3 rounded-2xl rounded-tr-sm max-w-[85%]"
                   : "w-full text-foreground"
               )}
             >
@@ -176,20 +179,41 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
               ) : (
                 <div className="markdown-content w-full">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
                     components={{
                       code: CodeBlock,
                       p: ({ children }) => <p className="mb-4 last:mb-0 text-foreground/90">{children}</p>,
                       a: ({ href, children }) => (
-                        <a href={href} className="text-primary hover:text-primary/80 underline underline-offset-4">
+                        <a href={href} className="text-primary hover:text-primary/80 underline underline-offset-4" target="_blank" rel="noopener noreferrer">
                           {children}
                         </a>
                       ),
                       ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
                       ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
+                      li: ({ children }) => <li className="text-foreground/90">{children}</li>,
                       h1: ({ children }) => <h1 className="text-2xl font-bold font-display mt-8 mb-4 text-white">{children}</h1>,
                       h2: ({ children }) => <h2 className="text-xl font-bold font-display mt-6 mb-3 text-white">{children}</h2>,
                       h3: ({ children }) => <h3 className="text-lg font-bold font-display mt-4 mb-2 text-white">{children}</h3>,
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-4 border-primary/40 pl-4 my-4 italic text-muted-foreground">
+                          {children}
+                        </blockquote>
+                      ),
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-4 rounded-xl border border-white/10">
+                          <table className="w-full text-sm border-collapse">{children}</table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-white/5">{children}</thead>,
+                      th: ({ children }) => (
+                        <th className="px-4 py-2 text-left font-semibold text-white border-b border-white/10">{children}</th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="px-4 py-2 text-foreground/80 border-b border-white/5">{children}</td>
+                      ),
+                      tr: ({ children }) => <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>,
+                      hr: () => <hr className="border-white/10 my-6" />,
                     }}
                   >
                     {message.content}

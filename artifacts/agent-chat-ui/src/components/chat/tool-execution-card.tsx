@@ -1,9 +1,24 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Zap, Code2, AlignLeft } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Zap, Code2, AlignLeft, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { Execution } from "@workspace/api-client-react";
+
+function formatArgsSummary(args: Record<string, unknown> | undefined): string | null {
+  if (!args || typeof args !== "object") return null;
+  const entries = Object.entries(args);
+  if (entries.length === 0) return null;
+  return entries
+    .slice(0, 3)
+    .map(([k, v]) => {
+      const val = typeof v === "string"
+        ? v.length > 30 ? `"${v.slice(0, 30)}..."` : `"${v}"`
+        : JSON.stringify(v);
+      return `${k}: ${val}`;
+    })
+    .join(", ") + (entries.length > 3 ? ` +${entries.length - 3} more` : "");
+}
 
 export function ToolExecutionCard({ execution }: { execution: Execution }) {
   const [expanded, setExpanded] = useState(false);
@@ -13,19 +28,21 @@ export function ToolExecutionCard({ execution }: { execution: Execution }) {
   const isError = execution.status === "error";
   const isRunning = execution.status === "running" || execution.status === "pending";
   const hasRaw = execution.rawResult != null;
+  const hasArgs = execution.arguments != null && Object.keys(execution.arguments).length > 0;
+  const argsSummary = formatArgsSummary(execution.arguments);
 
   return (
-    <div className="w-full flex justify-center py-4">
-      <div className="max-w-4xl w-full px-6">
+    <div className="w-full flex justify-center py-3">
+      <div className="max-w-4xl w-full px-4 sm:px-6">
         <div className="bg-card border border-border/60 rounded-2xl overflow-hidden shadow-lg shadow-black/10 transition-all hover:border-border">
           <div
-            className="flex items-center justify-between p-4 cursor-pointer bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
+            className="flex items-center justify-between p-4 min-h-[56px] cursor-pointer bg-white/[0.02] hover:bg-white/[0.04] active:bg-white/[0.06] transition-colors"
             onClick={() => setExpanded(!expanded)}
           >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div
                 className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center shadow-inner",
+                  "w-10 h-10 rounded-xl flex items-center justify-center shadow-inner flex-shrink-0",
                   isSuccess
                     ? "bg-green-500/10 text-green-500 border border-green-500/20"
                     : isError
@@ -42,27 +59,35 @@ export function ToolExecutionCard({ execution }: { execution: Execution }) {
                 )}
               </div>
 
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm text-foreground">{execution.toolName}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground font-mono border border-white/5">
+                  <span className="text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground font-mono border border-white/5 flex-shrink-0">
                     {execution.serverName ?? `Server #${execution.serverId}`}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground font-mono">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
+                    <Clock className="w-3 h-3 flex-shrink-0" />
                     {format(new Date(execution.startedAt), "HH:mm:ss")}
                   </span>
-                  {execution.durationMs != null && <span>• {execution.durationMs}ms</span>}
+                  {execution.durationMs != null && (
+                    <span className="text-xs text-muted-foreground font-mono">• {execution.durationMs}ms</span>
+                  )}
+                  {argsSummary && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground/70 font-mono min-w-0">
+                      <ArrowRight className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate max-w-[200px] sm:max-w-xs">{argsSummary}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 ml-2">
               <span
                 className={cn(
-                  "text-xs font-medium px-2 py-1 rounded-md border",
+                  "text-xs font-medium px-2 py-1 rounded-md border hidden sm:inline-flex",
                   isSuccess
                     ? "bg-green-500/10 text-green-400 border-green-500/20"
                     : isError
@@ -120,6 +145,18 @@ export function ToolExecutionCard({ execution }: { execution: Execution }) {
 
                   {!showRaw ? (
                     <>
+                      {/* Input arguments */}
+                      {hasArgs && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
+                            Inputs
+                          </div>
+                          <pre className="p-3 rounded-xl bg-background border border-border/50 overflow-x-auto text-amber-200 text-xs leading-relaxed max-h-48">
+                            <code>{JSON.stringify(execution.arguments, null, 2)}</code>
+                          </pre>
+                        </div>
+                      )}
+
                       {execution.resultSummary && (
                         <div className="text-foreground/90">
                           <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
