@@ -1,12 +1,10 @@
 kind = "api"
-  title = "MCP Gateway"
-  version = "1.0.0"
+title = "MCP Gateway"
 
-  [[services]]
-  name = "MCP Gateway"
-  localPort = 9000
-  paths = ["/internal/gateway"]
+[[services]]
+name = "MCP Gateway"
+localPort = 9000
+paths = ["/internal/gateway"]
 
-  [services.development]
-  run = "cd /home/runner/workspace/artifacts/agent-backend && python main.py"
-  
+[services.development]
+run = "cd /home/runner/workspace/artifacts/agent-backend && python main.py"
