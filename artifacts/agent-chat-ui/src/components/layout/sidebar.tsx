@@ -50,6 +50,16 @@ export function Sidebar() {
   const duplicateMutation = useDuplicateAnthropicConversation();
   const autoNameMutation = useAutoNameAnthropicConversation();
 
+  // Subscribe to SSE health events so sidebar server status updates immediately
+  // when a health check fires (rather than waiting for the 60s poll interval).
+  useEffect(() => {
+    const es = new EventSource("/api/system/status/events");
+    es.addEventListener("server_status", () => {
+      queryClient.invalidateQueries({ queryKey: ["mcp-servers-sidebar"] });
+    });
+    return () => es.close();
+  }, [queryClient]);
+
   useEffect(() => {
     if (editingId !== null) {
       editInputRef.current?.focus();

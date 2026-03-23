@@ -152,6 +152,13 @@ paths:
           required: true
           schema:
             type: integer
+        - name: force
+          in: query
+          required: false
+          description: When true, renames even if the title was manually set. When false (default), only renames if the title is still a default placeholder.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Generated title
@@ -565,6 +572,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemStatus"
+
+  /system/status/events:
+    get:
+      operationId: getSystemStatusEvents
+      tags: [health]
+      summary: SSE stream of real-time MCP server health-check events
+      description: |
+        Server-Sent Events (SSE) stream that emits `server_status` events whenever the
+        background health-check job updates an MCP server's connectivity status. A heartbeat
+        comment is sent every 30 seconds to keep the connection alive.
+        Each `server_status` event data is a JSON object with fields:
+        - `serverId` (integer)
+        - `name` (string)
+        - `status` ("connected" | "error")
+        - `lastCheckedAt` (ISO 8601 timestamp)
+      responses:
+        "200":
+          description: SSE stream (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Newline-delimited SSE events
 
   /executions/{executionId}/logs:
     get:
