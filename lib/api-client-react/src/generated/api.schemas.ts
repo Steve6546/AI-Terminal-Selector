@@ -256,6 +256,7 @@ export interface Execution {
   completedAt?: string;
   durationMs?: number;
   resultSummary?: string;
+  rawResult?: unknown;
 }
 
 export type SettingsMapDefaultModel =

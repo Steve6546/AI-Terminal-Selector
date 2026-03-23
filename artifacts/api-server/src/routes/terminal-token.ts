@@ -36,7 +36,9 @@ router.get("/terminal/token", (req, res) => {
     return;
   }
 
-  const origin = req.headers.origin ?? req.headers.host ?? "localhost";
+  // Store the exact Origin header if present; empty string signals same-origin (no scheme mismatch).
+  // Never fall back to Host header — it lacks a scheme and would fail parsed-equality checks on WS.
+  const origin = (req.headers.origin as string | undefined) ?? "";
   const token = issueTerminalToken(ip, origin);
   res.json({ token });
 });

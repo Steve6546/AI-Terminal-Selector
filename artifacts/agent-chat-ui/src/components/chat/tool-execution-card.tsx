@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Zap } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Zap, Code2, AlignLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { Execution } from "@workspace/api-client-react";
 
 export function ToolExecutionCard({ execution }: { execution: Execution }) {
   const [expanded, setExpanded] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
 
   const isSuccess = execution.status === "success";
   const isError = execution.status === "error";
   const isRunning = execution.status === "running" || execution.status === "pending";
+  const hasRaw = execution.rawResult != null;
 
   return (
     <div className="w-full flex justify-center py-4">
@@ -88,37 +90,80 @@ export function ToolExecutionCard({ execution }: { execution: Execution }) {
                 className="overflow-hidden border-t border-border/50"
               >
                 <div className="p-4 bg-black/40 font-mono text-sm space-y-4">
-                  {execution.resultSummary && (
-                    <div className="text-foreground/90">
-                      <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
-                        Summary
-                      </div>
-                      {execution.resultSummary}
+                  {/* Tab selector for Summary / Raw */}
+                  {hasRaw && (
+                    <div className="flex gap-1 p-1 bg-black/30 rounded-lg border border-border/40 w-fit">
+                      <button
+                        onClick={() => setShowRaw(false)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                          !showRaw
+                            ? "bg-primary/20 text-primary border border-primary/30"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <AlignLeft className="w-3 h-3" /> Summary
+                      </button>
+                      <button
+                        onClick={() => setShowRaw(true)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                          showRaw
+                            ? "bg-primary/20 text-primary border border-primary/30"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Code2 className="w-3 h-3" /> Raw Response
+                      </button>
                     </div>
                   )}
 
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
-                      Execution Details
+                  {!showRaw ? (
+                    <>
+                      {execution.resultSummary && (
+                        <div className="text-foreground/90">
+                          <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
+                            Summary
+                          </div>
+                          {execution.resultSummary}
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
+                          Execution Details
+                        </div>
+                        <pre className="p-4 rounded-xl bg-background border border-border/50 overflow-x-auto text-indigo-200 text-xs leading-relaxed max-h-96">
+                          <code>
+                            {JSON.stringify(
+                              {
+                                id: execution.id,
+                                toolName: execution.toolName,
+                                serverName: execution.serverName,
+                                status: execution.status,
+                                startedAt: execution.startedAt,
+                                completedAt: execution.completedAt,
+                                durationMs: execution.durationMs,
+                              },
+                              null,
+                              2
+                            )}
+                          </code>
+                        </pre>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
+                        Raw Response
+                      </div>
+                      <pre className="p-4 rounded-xl bg-background border border-border/50 overflow-x-auto text-emerald-200 text-xs leading-relaxed max-h-96">
+                        <code>
+                          {JSON.stringify(execution.rawResult, null, 2)}
+                        </code>
+                      </pre>
                     </div>
-                    <pre className="p-4 rounded-xl bg-background border border-border/50 overflow-x-auto text-indigo-200 text-xs leading-relaxed max-h-96">
-                      <code>
-                        {JSON.stringify(
-                          {
-                            id: execution.id,
-                            toolName: execution.toolName,
-                            serverName: execution.serverName,
-                            status: execution.status,
-                            startedAt: execution.startedAt,
-                            completedAt: execution.completedAt,
-                            durationMs: execution.durationMs,
-                          },
-                          null,
-                          2
-                        )}
-                      </code>
-                    </pre>
-                  </div>
+                  )}
                 </div>
               </motion.div>
             )}

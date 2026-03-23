@@ -10,7 +10,7 @@ import { useLocalSettings } from "@/hooks/use-local-settings";
 import { useChatStream, type LiveToolExecution } from "@/hooks/use-chat-stream";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
-import { ChatInput } from "@/components/chat/chat-input";
+import { ChatInput, type ToolParams } from "@/components/chat/chat-input";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { ToolExecutionCard } from "@/components/chat/tool-execution-card";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
@@ -66,7 +66,7 @@ export default function ChatPage() {
   const conversationId = params.id ? parseInt(params.id) : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
-  const [pendingMessage, setPendingMessage] = useState<{ text: string; attachmentIds?: number[] } | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<{ text: string; attachmentIds?: number[]; toolParams?: ToolParams } | null>(null);
 
   const { model, setModel, mode, setMode } = useLocalSettings();
   const createMutation = useCreateAnthropicConversation();
@@ -110,27 +110,27 @@ export default function ChatPage() {
   // When a pending message exists and we've navigated to a conversation, send it
   useEffect(() => {
     if (conversationId && pendingMessage) {
-      const { text, attachmentIds } = pendingMessage;
+      const { text, attachmentIds, toolParams } = pendingMessage;
       setPendingMessage(null);
-      sendMessage(text, attachmentIds);
+      sendMessage(text, attachmentIds, toolParams);
     }
   }, [conversationId, pendingMessage, sendMessage]);
 
-  const handleSend = useCallback((text: string, attachmentIds?: number[]) => {
+  const handleSend = useCallback((text: string, attachmentIds?: number[], toolParams?: ToolParams) => {
     if (!conversationId) {
       // Auto-create a new conversation then send
       createMutation.mutate(
         { data: { title: "New Conversation" } },
         {
           onSuccess: (data) => {
-            setPendingMessage({ text, attachmentIds });
+            setPendingMessage({ text, attachmentIds, toolParams });
             setLocation(`/c/${data.id}`);
           }
         }
       );
       return;
     }
-    sendMessage(text, attachmentIds);
+    sendMessage(text, attachmentIds, toolParams);
   }, [conversationId, createMutation, sendMessage, setLocation]);
 
   return (

@@ -74,8 +74,10 @@ function consumeToken(token: string | null, ip: string, wsOrigin: string): boole
   }
   // IP must match
   if (rec.ip !== ip) return false;
-  // Origin must match (parsed strict equality) — allows empty origin (same-origin WS)
-  if (wsOrigin) {
+  // Origin must match (parsed strict equality).
+  // If stored origin is "" (same-origin token fetch, no Origin header), skip origin check —
+  // the IP binding is sufficient, and same-origin WS is trusted by definition.
+  if (rec.origin !== "" && wsOrigin) {
     const reqOrigin = parseOrigin(wsOrigin);
     const recOrigin = parseOrigin(rec.origin) ?? rec.origin;
     if (reqOrigin !== recOrigin) return false;

@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench, X, FileText, Image } from "lucide-react";
+import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench, X, FileText, Image, ChevronDown } from "lucide-react";
 import { InteractionMode } from "@/hooks/use-local-settings";
 import { cn } from "@/lib/utils";
+import { useListMcpServers, useListMcpTools } from "@workspace/api-client-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,8 +19,14 @@ export interface PendingAttachment {
   fileType: string;
 }
 
+export interface ToolParams {
+  serverId: number;
+  toolName: string;
+  toolArgs: Record<string, unknown>;
+}
+
 interface ChatInputProps {
-  onSend: (text: string, attachmentIds?: number[]) => void;
+  onSend: (text: string, attachmentIds?: number[], toolParams?: ToolParams) => void;
   onStop: () => void;
   isStreaming: boolean;
   mode: InteractionMode;
@@ -36,9 +43,56 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
   const [uploading, setUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [argsError, setArgsError] = useState<string | null>(null);
+
+  // Tool mode state
+  const [selectedServerId, setSelectedServerId] = useState<number | null>(null);
+  const [selectedToolName, setSelectedToolName] = useState<string | null>(null);
+
+  const { data: mcpServers } = useListMcpServers();
+  const { data: mcpTools } = useListMcpTools(selectedServerId ?? 0);
+
+  const selectedServer = mcpServers?.find((s) => s.id === selectedServerId);
+  const selectedTool = mcpTools?.find((t) => t.toolName === selectedToolName);
+
+  const parseToolArgs = (): Record<string, unknown> | null => {
+    const trimmed = text.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === "object" && !Array.isArray(parsed) && parsed !== null) {
+        return parsed as Record<string, unknown>;
+      }
+      setArgsError("Args must be a JSON object { ... }");
+      return null;
+    } catch {
+      setArgsError("Invalid JSON — please enter a valid JSON object for tool args");
+      return null;
+    }
+  };
 
   const handleSubmit = () => {
-    if (text.trim() && !isStreaming) {
+    if (isStreaming) return;
+
+    if (mode === "tool") {
+      if (!selectedServerId || !selectedToolName) {
+        setArgsError("Select a server and tool first");
+        return;
+      }
+      const toolArgs = parseToolArgs();
+      if (toolArgs === null) return;
+      setArgsError(null);
+      onSend(text.trim() || "{}", attachments.map((a) => a.id), {
+        serverId: selectedServerId,
+        toolName: selectedToolName,
+        toolArgs,
+      });
+      setText("");
+      setAttachments([]);
+      return;
+    }
+
+    if (text.trim()) {
       onSend(text.trim(), attachments.map((a) => a.id));
       setText("");
       setAttachments([]);
@@ -102,6 +156,10 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
 
   const isImage = (fileType: string) => IMAGE_TYPES.includes(fileType);
 
+  const canSend = mode === "tool"
+    ? !isStreaming && !!selectedServerId && !!selectedToolName
+    : !isStreaming && !!text.trim() && !uploading;
+
   return (
     <div className="w-full max-w-4xl mx-auto px-6 pb-6 pt-2">
       <input
@@ -117,6 +175,98 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
         "relative flex flex-col bg-input border border-border rounded-2xl shadow-xl transition-all duration-300",
         text.trim() ? "border-primary/50 shadow-[0_8px_30px_rgba(99,102,241,0.1)]" : "hover:border-border/80"
       )}>
+
+        {/* Tool Mode selector bar */}
+        {mode === "tool" && (
+          <div className="px-4 pt-3 flex flex-wrap items-center gap-2 border-b border-border/40 pb-3">
+            <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Direct Execute:</span>
+
+            {/* Server selector */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                  selectedServer
+                    ? "bg-accent/20 text-accent border-accent/30"
+                    : "bg-secondary text-muted-foreground border-border hover:border-accent/30"
+                )}>
+                  <Server className="w-3 h-3" />
+                  {selectedServer?.name ?? "Select Server"}
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52 bg-card border-border shadow-2xl">
+                <DropdownMenuLabel className="text-xs text-muted-foreground uppercase tracking-wider font-mono">MCP Servers</DropdownMenuLabel>
+                {mcpServers && mcpServers.length > 0 ? (
+                  mcpServers.map((s) => (
+                    <DropdownMenuItem
+                      key={s.id}
+                      className="gap-2 cursor-pointer text-sm"
+                      onClick={() => {
+                        setSelectedServerId(s.id);
+                        setSelectedToolName(null);
+                        setArgsError(null);
+                      }}
+                    >
+                      <div className={cn("w-2 h-2 rounded-full", s.status === "connected" ? "bg-green-400" : "bg-muted-foreground")} />
+                      {s.name}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                    No MCP servers found
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Tool selector */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={!selectedServerId}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+                    selectedTool
+                      ? "bg-primary/20 text-primary border-primary/30"
+                      : "bg-secondary text-muted-foreground border-border hover:border-primary/30"
+                  )}
+                >
+                  <Wrench className="w-3 h-3" />
+                  {selectedTool?.toolName ?? "Select Tool"}
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-60 bg-card border-border shadow-2xl max-h-64 overflow-y-auto">
+                <DropdownMenuLabel className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Tools</DropdownMenuLabel>
+                {mcpTools && mcpTools.length > 0 ? (
+                  mcpTools.filter((t) => t.enabled).map((t) => (
+                    <DropdownMenuItem
+                      key={t.id}
+                      className="gap-2 cursor-pointer flex-col items-start"
+                      onClick={() => { setSelectedToolName(t.toolName); setArgsError(null); }}
+                    >
+                      <span className="font-mono text-xs font-semibold">{t.toolName}</span>
+                      {t.description && (
+                        <span className="text-[10px] text-muted-foreground line-clamp-1">{t.description}</span>
+                      )}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                    {selectedServerId ? "No tools available" : "Select a server first"}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {selectedTool?.description && (
+              <span className="text-[10px] text-muted-foreground italic hidden sm:block">
+                {selectedTool.description.slice(0, 80)}{selectedTool.description.length > 80 ? "..." : ""}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Attachment Chips */}
         {attachments.length > 0 && (
@@ -190,9 +340,15 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
           <TextareaAutosize
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => { setText(e.target.value); setArgsError(null); }}
             onKeyDown={handleKeyDown}
-            placeholder={mode === "agent" ? "Ask the agent to do something..." : "Type a message (tool-free mode)..."}
+            placeholder={
+              mode === "agent"
+                ? "Ask the agent to do something..."
+                : selectedToolName
+                ? `JSON args for "${selectedToolName}", e.g. { "key": "value" } (or leave empty)`
+                : "Select a server and tool above, then enter JSON args here..."
+            }
             className="flex-1 bg-transparent border-0 outline-none resize-none py-2 text-sm text-foreground placeholder:text-muted-foreground max-h-64 custom-scrollbar"
             minRows={1}
             maxRows={8}
@@ -233,7 +389,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={!text.trim() || uploading}
+                disabled={!canSend}
                 className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed glow-effect"
               >
                 <Send className="w-4 h-4 translate-x-0.5" />
@@ -241,6 +397,11 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
             )}
           </div>
         </div>
+
+        {/* Args error */}
+        {argsError && (
+          <div className="px-4 pb-2 text-xs text-red-400 font-mono">{argsError}</div>
+        )}
       </div>
       <div className="text-center mt-2">
         <span className="text-[10px] text-muted-foreground font-mono">Agent Tool Chat uses Replit AI Integrations.</span>

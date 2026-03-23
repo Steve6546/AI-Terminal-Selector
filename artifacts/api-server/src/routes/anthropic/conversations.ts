@@ -271,8 +271,15 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     const model = body.model ?? conv.model ?? "claude-sonnet-4-6";
-    const mode = (req.body as { mode?: string }).mode ?? "agent";
-    const rawAttachmentIds = (req.body as { attachmentIds?: unknown }).attachmentIds;
+    const rawBody = req.body as {
+      mode?: string;
+      attachmentIds?: unknown;
+      selectedServerId?: unknown;
+      selectedToolName?: unknown;
+      toolArgs?: unknown;
+    };
+    const mode = rawBody.mode ?? "agent";
+    const rawAttachmentIds = rawBody.attachmentIds;
     const attachmentIds: number[] = Array.isArray(rawAttachmentIds)
       ? rawAttachmentIds.filter((id): id is number => typeof id === "number")
       : [];
@@ -651,8 +658,139 @@ router.post("/conversations/:id/messages", async (req, res) => {
           });
         }
       }
+    } else if (mode === "tool") {
+      // Tool mode: user has explicitly selected a server + tool + args; execute directly (no LLM planning)
+      const selectedServerId = typeof rawBody.selectedServerId === "number" ? rawBody.selectedServerId : null;
+      const selectedToolName = typeof rawBody.selectedToolName === "string" ? rawBody.selectedToolName : null;
+      const toolArgs = (rawBody.toolArgs && typeof rawBody.toolArgs === "object" && !Array.isArray(rawBody.toolArgs))
+        ? (rawBody.toolArgs as Record<string, unknown>)
+        : {};
+
+      if (!selectedServerId || !selectedToolName) {
+        sendEvent({ error: "Tool mode requires selectedServerId and selectedToolName" });
+        sendEvent({ done: true });
+        res.end();
+        return;
+      }
+
+      // Look up server and tool
+      const [server] = await db.select().from(mcpServers).where(eq(mcpServers.id, selectedServerId));
+      if (!server) {
+        sendEvent({ error: `MCP server #${selectedServerId} not found` });
+        sendEvent({ done: true });
+        res.end();
+        return;
+      }
+
+      const [toolRecord] = await db
+        .select()
+        .from(mcpTools)
+        .where(and(eq(mcpTools.serverId, selectedServerId), eq(mcpTools.toolName, selectedToolName)));
+
+      if (!toolRecord) {
+        sendEvent({ error: `Tool "${selectedToolName}" not found on server "${server.name}"` });
+        sendEvent({ done: true });
+        res.end();
+        return;
+      }
+
+      // Emit selecting-server phase
+      sendEvent({
+        tool_execution: {
+          phase: "selecting-server",
+          serverName: server.name,
+          message: `Connecting to "${server.name}"...`,
+        },
+      });
+
+      // Create execution record
+      const [execution] = await db
+        .insert(executions)
+        .values({
+          conversationId: convId,
+          serverId: server.id,
+          toolName: selectedToolName,
+          status: "running",
+          startedAt: new Date(),
+        })
+        .returning();
+
+      // Emit running phase
+      sendEvent({
+        tool_execution: {
+          phase: "running",
+          executionId: execution.id,
+          toolName: selectedToolName,
+          serverId: server.id,
+          serverName: server.name,
+        },
+      });
+
+      const execStart = Date.now();
+      let execResult: import("../../lib/mcp-gateway").McpExecuteResult | null = null;
+      let execSuccess = false;
+      let execError = "";
+
+      try {
+        execResult = await executeMcpTool(
+          {
+            transportType: server.transportType,
+            endpoint: server.endpoint,
+            command: server.command,
+            args: (server.args as string[]) ?? [],
+            authType: server.authType,
+            authSecret: unmaskSecret(server.encryptedSecret),
+            timeout: server.timeout,
+            retryCount: server.retryCount,
+          },
+          selectedToolName,
+          toolArgs
+        );
+        execSuccess = execResult.success;
+      } catch (err) {
+        execError = err instanceof Error ? err.message : String(err);
+      }
+
+      const durationMs = Date.now() - execStart;
+      const resultText = execResult
+        ? (typeof execResult.content === "string"
+            ? execResult.content
+            : JSON.stringify(execResult.content ?? "")).slice(0, 500)
+        : execError;
+
+      await db
+        .update(executions)
+        .set({
+          status: execSuccess ? "success" : "error",
+          completedAt: new Date(),
+          durationMs,
+          resultSummary: resultText.slice(0, 500),
+          rawResult: execResult?.content as Record<string, unknown> | null,
+          errorMessage: execSuccess ? null : execError || resultText,
+        })
+        .where(eq(executions.id, execution.id));
+
+      // Emit done phase
+      sendEvent({
+        tool_execution: {
+          phase: "done",
+          executionId: execution.id,
+          toolName: selectedToolName,
+          serverId: server.id,
+          serverName: server.name,
+          success: execSuccess,
+          durationMs,
+        },
+      });
+
+      // Save assistant message summarizing the direct tool execution
+      fullResponse = execSuccess
+        ? `Executed **${selectedToolName}** on **${server.name}** in ${durationMs}ms.\n\n**Result:**\n\`\`\`json\n${resultText}\n\`\`\``
+        : `Tool **${selectedToolName}** on **${server.name}** failed: ${execError || resultText}`;
+
+      sendEvent({ content: fullResponse });
     } else {
-      // Tool mode: plain streaming without MCP tools
+      // Fallback: plain streaming without MCP tools
       const stream = anthropic.messages.stream({
         model,
         max_tokens: 8192,

@@ -28,7 +28,11 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
   const abortControllerRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
 
-  const sendMessage = useCallback(async (content: string, attachmentIds?: number[]) => {
+  const sendMessage = useCallback(async (
+    content: string,
+    attachmentIds?: number[],
+    toolParams?: { serverId: number; toolName: string; toolArgs: Record<string, unknown> }
+  ) => {
     setIsStreaming(true);
     setStreamedText("");
     setLiveExecutions([]);
@@ -39,6 +43,11 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
       const body: Record<string, unknown> = { content, model, mode };
       if (attachmentIds && attachmentIds.length > 0) {
         body.attachmentIds = attachmentIds;
+      }
+      if (toolParams) {
+        body.selectedServerId = toolParams.serverId;
+        body.selectedToolName = toolParams.toolName;
+        body.toolArgs = toolParams.toolArgs;
       }
 
       const response = await fetch(`/api/anthropic/conversations/${conversationId}/messages`, {
