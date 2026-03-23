@@ -333,6 +333,27 @@ paths:
                 items:
                   $ref: "#/components/schemas/McpTool"
 
+  /mcp-servers/{id}/resources:
+    get:
+      operationId: listMcpResources
+      tags: [mcpTools]
+      summary: List resources discovered from an MCP server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/McpResource"
+
   /mcp-tools/{toolId}:
     patch:
       operationId: updateMcpTool
@@ -783,6 +804,31 @@ components:
         - toolName
         - enabled
         - requiresApproval
+        - createdAt
+
+    McpResource:
+      type: object
+      properties:
+        id:
+          type: integer
+        serverId:
+          type: integer
+        resourceName:
+          type: string
+        description:
+          type: string
+        resourceType:
+          type: string
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - serverId
+        - resourceName
+        - resourceType
         - createdAt
 
     UpdateMcpToolBody:

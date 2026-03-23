@@ -25,6 +25,8 @@ export * from "./healthStatus";
 export * from "./listAttachmentsParams";
 export * from "./listExecutionsParams";
 export * from "./mcpConnectionTestResult";
+export * from "./mcpResource";
+export * from "./mcpResourceMetadata";
 export * from "./mcpServer";
 export * from "./mcpServerAuthType";
 export * from "./mcpServerStatus";

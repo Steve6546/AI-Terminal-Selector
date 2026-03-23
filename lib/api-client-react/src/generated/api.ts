@@ -31,6 +31,7 @@ import type {
   ListAttachmentsParams,
   ListExecutionsParams,
   McpConnectionTestResult,
+  McpResource,
   McpServer,
   McpTool,
   SendAnthropicMessageBody,
@@ -1409,6 +1410,93 @@ export function useListMcpTools<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListMcpToolsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List resources discovered from an MCP server
+ */
+export const getListMcpResourcesUrl = (id: number) => {
+  return `/api/mcp-servers/${id}/resources`;
+};
+
+export const listMcpResources = async (
+  id: number,
+  options?: RequestInit,
+): Promise<McpResource[]> => {
+  return customFetch<McpResource[]>(getListMcpResourcesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMcpResourcesQueryKey = (id: number) => {
+  return [`/api/mcp-servers/${id}/resources`] as const;
+};
+
+export const getListMcpResourcesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMcpResources>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMcpResources>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMcpResourcesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listMcpResources>>
+  > = ({ signal }) => listMcpResources(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMcpResources>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMcpResourcesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMcpResources>>
+>;
+export type ListMcpResourcesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List resources discovered from an MCP server
+ */
+
+export function useListMcpResources<
+  TData = Awaited<ReturnType<typeof listMcpResources>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMcpResources>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMcpResourcesQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

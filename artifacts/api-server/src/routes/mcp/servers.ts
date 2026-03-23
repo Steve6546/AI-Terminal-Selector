@@ -7,8 +7,10 @@ import {
   UpdateMcpServerBody,
   UpdateMcpToolBody,
 } from "@workspace/api-zod";
-import { maskSecret } from "../../lib/secret-utils";
+import { maskSecret, unmaskSecret } from "../../lib/secret-utils";
 import { handleRouteError } from "../../lib/handle-error";
+import { testMcpConnection, discoverMcpCapabilities } from "../../lib/mcp-gateway";
+import { mcpResources } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -230,48 +232,25 @@ router.post("/mcp-servers/:id/test", async (req, res) => {
       return;
     }
 
-    const startTime = Date.now();
-
     await db
       .update(mcpServers)
       .set({ status: "checking", lastCheckedAt: new Date() })
       .where(eq(mcpServers.id, id));
 
-    let success = false;
-    let message = "Connection failed";
-
-    try {
-      if (server.transportType === "streamable-http" && server.endpoint) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), (server.timeout ?? 30) * 1000);
-        try {
-          const response = await fetch(server.endpoint, {
-            method: "GET",
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-          success = response.ok || response.status < 500;
-          message = success ? "Connection successful" : `Server returned ${response.status}`;
-        } catch (_e) {
-          clearTimeout(timeout);
-          message = "Could not reach server endpoint";
-        }
-      } else if (server.transportType === "stdio") {
-        success = true;
-        message = "stdio server configuration saved (connection tested at runtime)";
-      } else {
-        message = "No endpoint configured";
-      }
-    } catch (_err) {
-      message = "Connection error";
-    }
-
-    const latencyMs = Date.now() - startTime;
+    const result = await testMcpConnection({
+      transportType: server.transportType,
+      endpoint: server.endpoint,
+      command: server.command,
+      args: (server.args as string[] | null) ?? [],
+      authType: server.authType,
+      authSecret: unmaskSecret(server.encryptedSecret),
+      timeout: server.timeout ?? 30,
+    });
 
     await db
       .update(mcpServers)
       .set({
-        status: success ? "connected" : "error",
+        status: result.success ? "connected" : "error",
         lastCheckedAt: new Date(),
       })
       .where(eq(mcpServers.id, id));
@@ -282,10 +261,10 @@ router.post("/mcp-servers/:id/test", async (req, res) => {
       .where(eq(mcpTools.serverId, id));
 
     res.json({
-      success,
-      message,
+      success: result.success,
+      message: result.message,
       toolCount: Number(toolCountResult[0]?.count ?? 0),
-      latencyMs,
+      latencyMs: result.latencyMs,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to test MCP server");
@@ -306,30 +285,83 @@ router.post("/mcp-servers/:id/discover", async (req, res) => {
       return;
     }
 
-    const existingTools = await db
-      .select()
-      .from(mcpTools)
-      .where(eq(mcpTools.serverId, id));
+    await db
+      .update(mcpServers)
+      .set({ status: "checking", lastCheckedAt: new Date() })
+      .where(eq(mcpServers.id, id));
 
-    if (existingTools.length > 0) {
-      res.json(
-        existingTools.map((t) => ({
-          id: t.id,
-          serverId: t.serverId,
-          serverName: server.name,
-          toolName: t.toolName,
-          description: t.description,
-          inputSchema: t.inputSchema,
-          outputSchema: t.outputSchema,
-          enabled: t.enabled,
-          requiresApproval: t.requiresApproval,
-          createdAt: t.createdAt.toISOString(),
-        }))
-      );
-      return;
+    let discovered;
+    try {
+      discovered = await discoverMcpCapabilities({
+        transportType: server.transportType,
+        endpoint: server.endpoint,
+        command: server.command,
+        args: (server.args as string[] | null) ?? [],
+        authType: server.authType,
+        authSecret: unmaskSecret(server.encryptedSecret),
+        timeout: server.timeout ?? 30,
+      });
+    } catch (discoveryErr) {
+      await db
+        .update(mcpServers)
+        .set({ status: "error", lastCheckedAt: new Date() })
+        .where(eq(mcpServers.id, id));
+      throw discoveryErr;
     }
 
-    res.json([]);
+    // Clear and re-insert tools
+    await db.delete(mcpTools).where(eq(mcpTools.serverId, id));
+    await db.delete(mcpResources).where(eq(mcpResources.serverId, id));
+
+    let insertedTools: typeof mcpTools.$inferSelect[] = [];
+    if (discovered.tools.length > 0) {
+      insertedTools = await db
+        .insert(mcpTools)
+        .values(
+          discovered.tools.map((t) => ({
+            serverId: id,
+            toolName: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema as Record<string, unknown> | null,
+            outputSchema: null,
+            enabled: true,
+            requiresApproval: false,
+          }))
+        )
+        .returning();
+    }
+
+    if (discovered.resources.length > 0) {
+      await db.insert(mcpResources).values(
+        discovered.resources.map((r) => ({
+          serverId: id,
+          resourceName: r.name,
+          description: r.description,
+          resourceType: r.mimeType ?? "unknown",
+          metadata: { uri: r.uri } as Record<string, unknown>,
+        }))
+      );
+    }
+
+    await db
+      .update(mcpServers)
+      .set({ status: "connected", lastCheckedAt: new Date() })
+      .where(eq(mcpServers.id, id));
+
+    res.json(
+      insertedTools.map((t) => ({
+        id: t.id,
+        serverId: t.serverId,
+        serverName: server.name,
+        toolName: t.toolName,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        outputSchema: t.outputSchema,
+        enabled: t.enabled,
+        requiresApproval: t.requiresApproval,
+        createdAt: t.createdAt.toISOString(),
+      }))
+    );
   } catch (err) {
     req.log.error({ err }, "Failed to discover tools");
     handleRouteError(res, err, "Internal server error");
@@ -370,6 +402,41 @@ router.get("/mcp-servers/:id/tools", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list tools");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
+router.get("/mcp-servers/:id/resources", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [server] = await db
+      .select()
+      .from(mcpServers)
+      .where(eq(mcpServers.id, id));
+
+    if (!server) {
+      res.status(404).json({ error: "Server not found" });
+      return;
+    }
+
+    const resources = await db
+      .select()
+      .from(mcpResources)
+      .where(eq(mcpResources.serverId, id));
+
+    res.json(
+      resources.map((r) => ({
+        id: r.id,
+        serverId: r.serverId,
+        resourceName: r.resourceName,
+        description: r.description,
+        resourceType: r.resourceType,
+        metadata: r.metadata,
+        createdAt: r.createdAt.toISOString(),
+      }))
+    );
+  } catch (err) {
+    req.log.error({ err }, "Failed to list resources");
     handleRouteError(res, err, "Internal server error");
   }
 });

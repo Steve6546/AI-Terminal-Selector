@@ -208,6 +208,18 @@ export interface McpTool {
   createdAt: string;
 }
 
+export type McpResourceMetadata = { [key: string]: unknown };
+
+export interface McpResource {
+  id: number;
+  serverId: number;
+  resourceName: string;
+  description?: string;
+  resourceType: string;
+  metadata?: McpResourceMetadata;
+  createdAt: string;
+}
+
 export interface UpdateMcpToolBody {
   enabled?: boolean;
   requiresApproval?: boolean;

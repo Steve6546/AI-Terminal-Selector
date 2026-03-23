@@ -113,4 +113,13 @@
   .markdown-content {
     @apply prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-zinc-900/50 prose-pre:border prose-pre:border-border/50 prose-pre:rounded-xl;
   }
+
+  .animate-slide-left {
+    animation: slide-from-right 0.25s ease-out;
+  }
+
+  @keyframes slide-from-right {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
 }

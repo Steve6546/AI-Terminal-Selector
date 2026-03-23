@@ -291,6 +291,24 @@ export const ListMcpToolsResponseItem = zod.object({
 export const ListMcpToolsResponse = zod.array(ListMcpToolsResponseItem);
 
 /**
+ * @summary List resources discovered from an MCP server
+ */
+export const ListMcpResourcesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListMcpResourcesResponseItem = zod.object({
+  id: zod.number(),
+  serverId: zod.number(),
+  resourceName: zod.string(),
+  description: zod.string().optional(),
+  resourceType: zod.string(),
+  metadata: zod.object({}).passthrough().optional(),
+  createdAt: zod.date(),
+});
+export const ListMcpResourcesResponse = zod.array(ListMcpResourcesResponseItem);
+
+/**
  * @summary Update an MCP tool (enable/disable, require approval)
  */
 export const UpdateMcpToolParams = zod.object({
