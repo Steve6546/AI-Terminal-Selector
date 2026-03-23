@@ -47,6 +47,19 @@ router.post("/mcp-tools/:toolId/execute", async (req, res) => {
       return;
     }
 
+    if (tool.requiresApproval) {
+      const { approved } = req.body as { approved?: boolean };
+      if (!approved) {
+        res.status(403).json({
+          error: "Tool requires explicit approval before execution",
+          requiresApproval: true,
+          toolId: tool.id,
+          toolName: tool.toolName,
+        });
+        return;
+      }
+    }
+
     const [execution] = await db
       .insert(executions)
       .values({

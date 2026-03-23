@@ -13,6 +13,7 @@ import {
   useListMcpTools,
   useUpdateMcpTool,
   useListExecutions,
+  useListAllExecutionLogs,
   useListDatabaseConnections,
   useCreateDatabaseConnection,
   useUpdateDatabaseConnection,
@@ -21,6 +22,7 @@ import {
   SettingsMapDefaultModel,
   type DatabaseConnection,
   type McpServer,
+  type ExecutionLogExtended,
 } from "@workspace/api-client-react";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
@@ -746,9 +748,58 @@ function SecurityTab({
   );
 }
 
+const LOG_LEVEL_COLORS: Record<string, string> = {
+  info: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  warn: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  error: "bg-red-500/20 text-red-300 border-red-500/30",
+  debug: "bg-gray-500/20 text-gray-300 border-gray-500/30",
+};
+
+function RawEventRow({ log }: { log: ExecutionLogExtended }) {
+  const levelColor = LOG_LEVEL_COLORS[log.level] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
+  return (
+    <div className="py-2.5 px-1 flex items-start gap-3 text-xs font-mono border-b border-white/5 hover:bg-white/2 transition-colors">
+      <span className="shrink-0 text-muted-foreground/60 tabular-nums w-20 pt-0.5">
+        {new Date(log.createdAt).toLocaleTimeString()}
+      </span>
+      <span className={cn("shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase", levelColor)}>
+        {log.level}
+      </span>
+      <span className="shrink-0 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] text-purple-300 uppercase">
+        {log.eventType}
+      </span>
+      {log.serverName && (
+        <span className="shrink-0 text-cyan-400/70">[{log.serverName}]</span>
+      )}
+      {log.toolName && (
+        <span className="shrink-0 text-orange-400/70">{log.toolName}</span>
+      )}
+      <span className="text-muted-foreground break-all leading-relaxed">{log.message}</span>
+    </div>
+  );
+}
+
 function LogsTab({ executions }: { executions: { id: number; toolName: string; serverName?: string | null; status: string; durationMs?: number | null; startedAt: string }[] | undefined }) {
+  const [view, setView] = useState<"executions" | "events">("executions");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [serverFilter, setServerFilter] = useState<string>("all");
+
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
+  const [afterFilter, setAfterFilter] = useState<string>("");
+  const [beforeFilter, setBeforeFilter] = useState<string>("");
+
+  const rawLogsParams = view === "events" ? {
+    level: levelFilter !== "all" ? levelFilter : undefined,
+    eventType: eventTypeFilter !== "all" ? eventTypeFilter : undefined,
+    after: afterFilter || undefined,
+    before: beforeFilter || undefined,
+    limit: 200,
+  } : undefined;
+
+  const { data: rawLogs, isLoading: logsLoading } = useListAllExecutionLogs(rawLogsParams, {
+    query: { enabled: view === "events", queryKey: ["/api/execution-logs", rawLogsParams] },
+  });
 
   const servers = [...new Set((executions ?? []).map((e) => e.serverName).filter(Boolean))];
 
@@ -764,6 +815,8 @@ function LogsTab({ executions }: { executions: { id: number; toolName: string; s
     error: executions?.filter((e) => e.status === "error" || e.status === "failed").length ?? 0,
     avgLatency: executions?.reduce((acc, e) => acc + (e.durationMs ?? 0), 0) ?? 0,
   };
+
+  const eventTypes = [...new Set((rawLogs ?? []).map((l) => l.eventType).filter(Boolean))].sort();
 
   return (
     <div className="space-y-4">
@@ -785,46 +838,129 @@ function LogsTab({ executions }: { executions: { id: number; toolName: string; s
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
-        >
-          <option value="all">All statuses</option>
-          <option value="success">Success</option>
-          <option value="error">Error</option>
-          <option value="pending">Pending</option>
-          <option value="running">Running</option>
-        </select>
-        {servers.length > 0 && (
-          <select
-            value={serverFilter}
-            onChange={(e) => setServerFilter(e.target.value)}
-            className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+      <div className="flex gap-1 bg-black/40 rounded-xl p-1 border border-white/5">
+        {(["executions", "events"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={cn(
+              "flex-1 py-1.5 rounded-lg text-sm font-medium transition-all",
+              view === v
+                ? "bg-primary/20 text-primary border border-primary/30"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            <option value="all">All servers</option>
-            {servers.map((s) => (
-              <option key={s} value={s!}>{s}</option>
-            ))}
-          </select>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground font-mono">
-          {filtered.length} / {stats.total} records
-        </span>
+            {v === "executions" ? "Tool Executions" : "Raw Events"}
+          </button>
+        ))}
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="text-center py-10 text-muted-foreground">
-          <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No executions match the current filters.</p>
-        </div>
+      {view === "executions" ? (
+        <>
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+            >
+              <option value="all">All statuses</option>
+              <option value="success">Success</option>
+              <option value="error">Error</option>
+              <option value="pending">Pending</option>
+              <option value="running">Running</option>
+            </select>
+            {servers.length > 0 && (
+              <select
+                value={serverFilter}
+                onChange={(e) => setServerFilter(e.target.value)}
+                className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+              >
+                <option value="all">All servers</option>
+                {servers.map((s) => (
+                  <option key={s} value={s!}>{s}</option>
+                ))}
+              </select>
+            )}
+            <span className="ml-auto text-xs text-muted-foreground font-mono">
+              {filtered.length} / {stats.total} records
+            </span>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No executions match the current filters.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {filtered.map((exec) => (
+                <ExecutionRow key={exec.id} exec={exec} />
+              ))}
+            </div>
+          )}
+        </>
       ) : (
-        <div className="divide-y divide-white/5">
-          {filtered.map((exec) => (
-            <ExecutionRow key={exec.id} exec={exec} />
-          ))}
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+              className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+            >
+              <option value="all">All levels</option>
+              <option value="info">Info</option>
+              <option value="warn">Warn</option>
+              <option value="error">Error</option>
+              <option value="debug">Debug</option>
+            </select>
+            <select
+              value={eventTypeFilter}
+              onChange={(e) => setEventTypeFilter(e.target.value)}
+              className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+            >
+              <option value="all">All event types</option>
+              {eventTypes.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <input
+              type="datetime-local"
+              value={afterFilter}
+              onChange={(e) => setAfterFilter(e.target.value)}
+              placeholder="After"
+              className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+              title="After date/time"
+            />
+            <input
+              type="datetime-local"
+              value={beforeFilter}
+              onChange={(e) => setBeforeFilter(e.target.value)}
+              placeholder="Before"
+              className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+              title="Before date/time"
+            />
+            <span className="ml-auto text-xs text-muted-foreground font-mono">
+              {rawLogs?.length ?? 0} events
+            </span>
+          </div>
+
+          {logsLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : !rawLogs || rawLogs.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No events match the current filters.</p>
+            </div>
+          ) : (
+            <div className="bg-black/60 rounded-xl border border-white/5 p-3 max-h-[480px] overflow-y-auto font-mono">
+              {rawLogs.map((log) => (
+                <RawEventRow key={log.id} log={log} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

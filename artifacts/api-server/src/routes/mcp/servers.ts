@@ -10,6 +10,7 @@ import {
 import { maskSecret, unmaskSecret } from "../../lib/secret-utils";
 import { handleRouteError } from "../../lib/handle-error";
 import { testMcpConnection, discoverMcpCapabilities } from "../../lib/mcp-gateway";
+import { checkEndpointAllowed } from "../../lib/domain-allowlist";
 import { mcpResources, mcpPrompts } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -66,6 +67,13 @@ router.get("/mcp-servers", async (req, res) => {
 router.post("/mcp-servers", async (req, res) => {
   try {
     const body = CreateMcpServerBody.parse(req.body);
+
+    const allowCheck = await checkEndpointAllowed(body.endpoint, body.transportType);
+    if (!allowCheck.allowed) {
+      res.status(403).json({ error: allowCheck.reason ?? "Endpoint not allowed by domain allowlist" });
+      return;
+    }
+
     const [server] = await db
       .insert(mcpServers)
       .values({
@@ -234,6 +242,12 @@ router.post("/mcp-servers/:id/test", async (req, res) => {
       return;
     }
 
+    const allowCheck = await checkEndpointAllowed(server.endpoint, server.transportType);
+    if (!allowCheck.allowed) {
+      res.status(403).json({ error: allowCheck.reason ?? "Endpoint not allowed by domain allowlist" });
+      return;
+    }
+
     await db
       .update(mcpServers)
       .set({ status: "checking", lastCheckedAt: new Date() })
@@ -294,6 +308,12 @@ router.post("/mcp-servers/:id/discover", async (req, res) => {
 
     if (!server) {
       res.status(404).json({ error: "Server not found" });
+      return;
+    }
+
+    const allowCheck = await checkEndpointAllowed(server.endpoint, server.transportType);
+    if (!allowCheck.allowed) {
+      res.status(403).json({ error: allowCheck.reason ?? "Endpoint not allowed by domain allowlist" });
       return;
     }
 

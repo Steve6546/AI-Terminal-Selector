@@ -31,6 +31,8 @@ import type {
   DatabaseConnectionTestResult,
   Execution,
   ExecutionLog,
+  ExecutionLogExtended,
+  ListExecutionLogsParams,
   HealthStatus,
   ListAttachmentsParams,
   ListExecutionsParams,
@@ -2552,3 +2554,64 @@ export const useTestDatabaseConnection = <
   const mutationFn = (props: { id: number }) => testDatabaseConnection(props.id);
   return useMutation({ mutationFn, ...options?.mutation });
 };
+
+export const getAllExecutionLogsUrl = (params?: ListExecutionLogsParams) => {
+  const query = new URLSearchParams();
+  if (params?.level) query.set("level", params.level);
+  if (params?.eventType) query.set("eventType", params.eventType);
+  if (params?.serverId != null) query.set("serverId", String(params.serverId));
+  if (params?.after) query.set("after", params.after);
+  if (params?.before) query.set("before", params.before);
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return `/api/execution-logs${qs ? `?${qs}` : ""}`;
+};
+
+export const listAllExecutionLogs = async (
+  params?: ListExecutionLogsParams,
+  options?: RequestInit,
+): Promise<ExecutionLogExtended[]> => {
+  return customFetch<ExecutionLogExtended[]>(getAllExecutionLogsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAllExecutionLogsQueryKey = (params?: ListExecutionLogsParams) =>
+  [`/api/execution-logs`, params] as const;
+
+export const getListAllExecutionLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAllExecutionLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListExecutionLogsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listAllExecutionLogs>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  }
+): UseQueryOptions<Awaited<ReturnType<typeof listAllExecutionLogs>>, TError, TData> => {
+  const { query: queryOptions } = options ?? {};
+  return {
+    queryKey: getListAllExecutionLogsQueryKey(params),
+    queryFn: () => listAllExecutionLogs(params),
+    ...queryOptions,
+  };
+};
+
+export function useListAllExecutionLogs<
+  TData = Awaited<ReturnType<typeof listAllExecutionLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListExecutionLogsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listAllExecutionLogs>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  }
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAllExecutionLogsQueryOptions(params, options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+  query.queryKey = queryOptions.queryKey;
+  return query;
+}

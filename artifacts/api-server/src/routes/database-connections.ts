@@ -183,7 +183,7 @@ router.post("/database-connections/:id/test", async (req, res) => {
           user: conn.username ?? undefined,
           password: password ?? undefined,
           database: conn.database,
-          ssl: conn.ssl ? { rejectUnauthorized: false } : false,
+          ssl: conn.ssl ? { rejectUnauthorized: true } : false,
           connectionTimeoutMillis: 5000,
         });
         await client.connect();
@@ -194,8 +194,40 @@ router.post("/database-connections/:id/test", async (req, res) => {
       } catch (e) {
         testResult = { success: false, message: (e as Error).message };
       }
+    } else if (conn.type === "mysql") {
+      try {
+        const mysql2 = await import("mysql2/promise");
+        const password = conn.encryptedPassword ? unmaskSecret(conn.encryptedPassword) : undefined;
+        const connection = await mysql2.createConnection({
+          host: conn.host ?? "localhost",
+          port: conn.port ?? 3306,
+          user: conn.username ?? undefined,
+          password: password ?? undefined,
+          database: conn.database,
+          ssl: conn.ssl ? {} : undefined,
+          connectTimeout: 5000,
+        });
+        await connection.query("SELECT 1");
+        await connection.end();
+        const latencyMs = Date.now() - start;
+        testResult = { success: true, message: "Connection successful", latencyMs };
+      } catch (e) {
+        testResult = { success: false, message: (e as Error).message };
+      }
+    } else if (conn.type === "sqlite") {
+      try {
+        const { existsSync } = await import("node:fs");
+        if (!existsSync(conn.database)) {
+          testResult = { success: false, message: `SQLite file not found: ${conn.database}` };
+        } else {
+          const latencyMs = Date.now() - start;
+          testResult = { success: true, message: "SQLite file accessible", latencyMs };
+        }
+      } catch (e) {
+        testResult = { success: false, message: (e as Error).message };
+      }
     } else {
-      testResult = { success: false, message: `${conn.type} connections are not yet supported for testing` };
+      testResult = { success: false, message: `Unknown connection type: ${conn.type}` };
     }
 
     const newStatus = testResult.success ? "connected" : "error";

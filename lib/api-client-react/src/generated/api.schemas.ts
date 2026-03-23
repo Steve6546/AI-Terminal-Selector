@@ -351,6 +351,27 @@ export type ListAttachmentsParams = {
   conversationId?: number;
 };
 
+export interface ExecutionLogExtended {
+  id: number;
+  executionId: number;
+  level: string;
+  eventType: string;
+  message: string;
+  createdAt: string;
+  toolName?: string | null;
+  executionStatus?: string | null;
+  serverName?: string | null;
+}
+
+export type ListExecutionLogsParams = {
+  level?: string;
+  eventType?: string;
+  serverId?: number;
+  after?: string;
+  before?: string;
+  limit?: number;
+};
+
 export type DatabaseConnectionType =
   (typeof DatabaseConnectionType)[keyof typeof DatabaseConnectionType];
 
