@@ -29,6 +29,13 @@
 - Auto-title conversations: after first AI response, title is set to first 60 chars of user message
 - Inline conversation rename via sidebar 3-dot menu → Edit text field → Enter to confirm
 - Auto-create conversation on send: if no conversation selected, creates one and auto-navigates
+- Real terminal (xterm.js + node-pty) with WebSocket connection
+- File attachments (upload files, paste text, JSON, images)
+- Comprehensive Settings page with 8 tabs: General, Agent Settings, MCP Servers, Tools, Databases, Security, Logs & Debug, UI Settings
+- Per-tool enable/disable and requiresApproval toggles in Settings → Tools
+- Database Connectors: add PostgreSQL/MySQL/SQLite connections with encrypted passwords, Test Connection
+- Domain allowlist in Security settings
+- Logs tab with status/server filters and latency stats
 
 ## Structure
 
@@ -55,8 +62,9 @@ scripts/                # Utility scripts
 - `mcp_prompts` — Prompt templates per server
 - `executions` — Tool execution records with timeline
 - `execution_logs` — Per-execution log entries
-- `settings` — Key/value app settings
+- `settings` — Key/value app settings (includes domainAllowlist, compactMode, developerMode, etc.)
 - `attachments` — File attachments for conversations
+- `database_connections` — External DB connections (PostgreSQL/MySQL/SQLite, encrypted passwords)
 
 ## API Routes (mounted at /api)
 
@@ -73,6 +81,9 @@ scripts/                # Utility scripts
 - `GET /api/system/status` — system health (connected servers, tool count, agent state)
 - `GET/PUT /api/settings` — get/update app settings
 - `GET /api/executions` — list tool executions
+- `GET/POST /api/database-connections` — list/create DB connections
+- `PATCH/DELETE /api/database-connections/:id` — update/delete DB connection
+- `POST /api/database-connections/:id/test` — test DB connection (PostgreSQL)
 
 ## Streaming (SSE)
 

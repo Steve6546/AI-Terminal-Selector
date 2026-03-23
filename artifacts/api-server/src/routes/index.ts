@@ -9,6 +9,7 @@ import executionsRouter from "./executions";
 import logsRouter from "./logs";
 import attachmentsRouter from "./attachments";
 import terminalTokenRouter from "./terminal-token";
+import databaseConnectionsRouter from "./database-connections";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(executionsRouter);
 router.use(logsRouter);
 router.use(attachmentsRouter);
 router.use(terminalTokenRouter);
+router.use(databaseConnectionsRouter);
 
 export default router;

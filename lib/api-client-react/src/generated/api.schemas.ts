@@ -288,6 +288,8 @@ export interface SettingsMap {
   developerMode?: boolean;
   showTimeline?: boolean;
   showTechnicalDetails?: boolean;
+  compactMode?: boolean;
+  domainAllowlist?: string[];
 }
 
 export type SystemStatusAgentState =
@@ -348,3 +350,64 @@ export type ListExecutionsParams = {
 export type ListAttachmentsParams = {
   conversationId?: number;
 };
+
+export type DatabaseConnectionType =
+  (typeof DatabaseConnectionType)[keyof typeof DatabaseConnectionType];
+
+export const DatabaseConnectionType = {
+  postgresql: "postgresql",
+  mysql: "mysql",
+  sqlite: "sqlite",
+} as const;
+
+export type DatabaseConnectionStatus =
+  (typeof DatabaseConnectionStatus)[keyof typeof DatabaseConnectionStatus];
+
+export const DatabaseConnectionStatus = {
+  connected: "connected",
+  disconnected: "disconnected",
+  error: "error",
+} as const;
+
+export interface DatabaseConnection {
+  id: number;
+  name: string;
+  type: string;
+  host?: string | null;
+  port?: number | null;
+  username?: string | null;
+  database: string;
+  ssl: boolean;
+  status: string;
+  lastTestedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDatabaseConnectionBody {
+  name: string;
+  type?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  database: string;
+  ssl?: boolean;
+}
+
+export interface UpdateDatabaseConnectionBody {
+  name?: string;
+  type?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  database?: string;
+  ssl?: boolean;
+}
+
+export interface DatabaseConnectionTestResult {
+  success: boolean;
+  message: string;
+  latencyMs?: number;
+}

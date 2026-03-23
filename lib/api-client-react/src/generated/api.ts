@@ -25,6 +25,10 @@ import type {
   CreateAnthropicConversationBody,
   CreateAttachmentBody,
   CreateMcpServerBody,
+  DatabaseConnection,
+  CreateDatabaseConnectionBody,
+  UpdateDatabaseConnectionBody,
+  DatabaseConnectionTestResult,
   Execution,
   ExecutionLog,
   HealthStatus,
@@ -2361,4 +2365,190 @@ export const useDeleteAttachment = <
   TContext
 > => {
   return useMutation(getDeleteAttachmentMutationOptions(options));
+};
+
+export const getListDatabaseConnectionsUrl = () => `/api/database-connections`;
+
+export const listDatabaseConnections = async (
+  options?: RequestInit,
+): Promise<DatabaseConnection[]> => {
+  return customFetch<DatabaseConnection[]>(getListDatabaseConnectionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDatabaseConnectionsQueryKey = () =>
+  [`/api/database-connections`] as const;
+
+export const getListDatabaseConnectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDatabaseConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listDatabaseConnections>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryOptions<Awaited<ReturnType<typeof listDatabaseConnections>>, TError, TData> => {
+  const { query: queryOptions } = options ?? {};
+  return {
+    queryKey: getListDatabaseConnectionsQueryKey(),
+    queryFn: () => listDatabaseConnections(),
+    ...queryOptions,
+  };
+};
+
+export function useListDatabaseConnections<
+  TData = Awaited<ReturnType<typeof listDatabaseConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listDatabaseConnections>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDatabaseConnectionsQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+  query.queryKey = queryOptions.queryKey;
+  return query;
+}
+
+export const getCreateDatabaseConnectionUrl = () => `/api/database-connections`;
+
+export const createDatabaseConnection = async (
+  data: BodyType<CreateDatabaseConnectionBody>,
+  options?: RequestInit,
+): Promise<DatabaseConnection> => {
+  return customFetch<DatabaseConnection>(getCreateDatabaseConnectionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(data),
+  });
+};
+
+export const useCreateDatabaseConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDatabaseConnection>>,
+    TError,
+    { data: BodyType<CreateDatabaseConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDatabaseConnection>>,
+  TError,
+  { data: BodyType<CreateDatabaseConnectionBody> },
+  TContext
+> => {
+  const mutationFn = (props: { data: BodyType<CreateDatabaseConnectionBody> }) =>
+    createDatabaseConnection(props.data);
+  return useMutation({ mutationFn, ...options?.mutation });
+};
+
+export const getUpdateDatabaseConnectionUrl = (id: number) =>
+  `/api/database-connections/${id}`;
+
+export const updateDatabaseConnection = async (
+  id: number,
+  data: BodyType<UpdateDatabaseConnectionBody>,
+  options?: RequestInit,
+): Promise<DatabaseConnection> => {
+  return customFetch<DatabaseConnection>(getUpdateDatabaseConnectionUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(data),
+  });
+};
+
+export const useUpdateDatabaseConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDatabaseConnection>>,
+    TError,
+    { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDatabaseConnection>>,
+  TError,
+  { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
+  TContext
+> => {
+  const mutationFn = (props: { id: number; data: BodyType<UpdateDatabaseConnectionBody> }) =>
+    updateDatabaseConnection(props.id, props.data);
+  return useMutation({ mutationFn, ...options?.mutation });
+};
+
+export const getDeleteDatabaseConnectionUrl = (id: number) =>
+  `/api/database-connections/${id}`;
+
+export const deleteDatabaseConnection = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDatabaseConnectionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const useDeleteDatabaseConnection = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationFn = (props: { id: number }) => deleteDatabaseConnection(props.id);
+  return useMutation({ mutationFn, ...options?.mutation });
+};
+
+export const getTestDatabaseConnectionUrl = (id: number) =>
+  `/api/database-connections/${id}/test`;
+
+export const testDatabaseConnection = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DatabaseConnectionTestResult> => {
+  return customFetch<DatabaseConnectionTestResult>(getTestDatabaseConnectionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const useTestDatabaseConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testDatabaseConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testDatabaseConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationFn = (props: { id: number }) => testDatabaseConnection(props.id);
+  return useMutation({ mutationFn, ...options?.mutation });
 };
