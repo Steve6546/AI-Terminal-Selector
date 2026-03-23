@@ -19,7 +19,9 @@
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "mysql2": "^3",
     "node-pty": "^1.1.0",
+    "pg": "^8",
     "pino": "^9",
     "pino-http": "^10",
     "ws": "^8.20.0"
@@ -29,6 +31,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
+    "@types/pg": "^8",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",

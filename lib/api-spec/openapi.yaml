@@ -491,6 +491,151 @@ paths:
         "404":
           description: Execution not found
 
+  /execution-logs:
+    get:
+      operationId: listAllExecutionLogs
+      tags: [executions]
+      summary: List all execution logs with optional filters
+      parameters:
+        - name: level
+          in: query
+          schema:
+            type: string
+          description: Comma-separated log levels (info,warn,error,debug)
+        - name: eventType
+          in: query
+          schema:
+            type: string
+          description: Comma-separated event types
+        - name: serverId
+          in: query
+          schema:
+            type: integer
+          description: Filter by MCP server ID
+        - name: after
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Return logs after this timestamp
+        - name: before
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Return logs before this timestamp
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+            maximum: 500
+          description: Maximum number of results to return
+      responses:
+        "200":
+          description: List of execution log entries with context
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExecutionLogExtended"
+
+  /database-connections:
+    get:
+      operationId: listDatabaseConnections
+      tags: [databases]
+      summary: List all database connections
+      responses:
+        "200":
+          description: List of database connections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DatabaseConnection"
+    post:
+      operationId: createDatabaseConnection
+      tags: [databases]
+      summary: Create a new database connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDatabaseConnectionBody"
+      responses:
+        "200":
+          description: Created database connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatabaseConnection"
+
+  /database-connections/{id}:
+    patch:
+      operationId: updateDatabaseConnection
+      tags: [databases]
+      summary: Update a database connection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDatabaseConnectionBody"
+      responses:
+        "200":
+          description: Updated database connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatabaseConnection"
+        "404":
+          description: Connection not found
+    delete:
+      operationId: deleteDatabaseConnection
+      tags: [databases]
+      summary: Delete a database connection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Connection not found
+
+  /database-connections/{id}/test:
+    post:
+      operationId: testDatabaseConnection
+      tags: [databases]
+      summary: Test a database connection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatabaseConnectionTestResult"
+        "404":
+          description: Connection not found
+
   /attachments:
     get:
       operationId: listAttachments
@@ -1009,6 +1154,151 @@ components:
         - fileName
         - fileType
         - createdAt
+
+    ExecutionLogExtended:
+      type: object
+      properties:
+        id:
+          type: integer
+        executionId:
+          type: integer
+        level:
+          type: string
+        eventType:
+          type: string
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        toolName:
+          type: string
+          nullable: true
+        executionStatus:
+          type: string
+          nullable: true
+        serverName:
+          type: string
+          nullable: true
+      required:
+        - id
+        - executionId
+        - level
+        - eventType
+        - message
+        - createdAt
+
+    DatabaseConnection:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [postgresql, mysql, sqlite]
+        host:
+          type: string
+          nullable: true
+        port:
+          type: integer
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        database:
+          type: string
+          nullable: true
+        filePath:
+          type: string
+          nullable: true
+        ssl:
+          type: boolean
+        status:
+          type: string
+          enum: [untested, connected, failed]
+        lastTestedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - type
+        - ssl
+        - status
+        - createdAt
+        - updatedAt
+
+    CreateDatabaseConnectionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [postgresql, mysql, sqlite]
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        password:
+          type: string
+        database:
+          type: string
+        filePath:
+          type: string
+        ssl:
+          type: boolean
+      required:
+        - name
+        - type
+
+    UpdateDatabaseConnectionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        password:
+          type: string
+        database:
+          type: string
+        filePath:
+          type: string
+        ssl:
+          type: boolean
+
+    DatabaseConnectionTestResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        latencyMs:
+          type: integer
+          nullable: true
+      required:
+        - success
+        - message
 
     CreateAttachmentBody:
       type: object
