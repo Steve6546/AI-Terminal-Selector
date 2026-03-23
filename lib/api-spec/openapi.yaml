@@ -141,6 +141,104 @@ paths:
               schema:
                 $ref: "#/components/schemas/AnthropicError"
 
+  /anthropic/conversations/{id}/auto-name:
+    post:
+      operationId: autoNameAnthropicConversation
+      tags: [anthropic]
+      summary: Auto-name a conversation using AI
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Generated title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoNameConversationResult"
+        "404":
+          description: Not found
+
+  /anthropic/conversations/{id}/pin:
+    post:
+      operationId: pinAnthropicConversation
+      tags: [anthropic]
+      summary: Pin a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pin result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PinConversationResult"
+
+  /anthropic/conversations/{id}/unpin:
+    post:
+      operationId: unpinAnthropicConversation
+      tags: [anthropic]
+      summary: Unpin a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Unpin result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PinConversationResult"
+
+  /anthropic/conversations/{id}/duplicate:
+    post:
+      operationId: duplicateAnthropicConversation
+      tags: [anthropic]
+      summary: Duplicate a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Duplicated conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicateConversationResult"
+
+  /anthropic/conversations/{id}/export:
+    get:
+      operationId: exportAnthropicConversation
+      tags: [anthropic]
+      summary: Export a conversation as JSON or Markdown
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, markdown]
+      responses:
+        "200":
+          description: Exported conversation file
+
   /anthropic/conversations/{id}/messages:
     get:
       operationId: listAnthropicMessages
@@ -709,6 +807,10 @@ components:
           type: string
         model:
           type: string
+        pinnedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -723,6 +825,56 @@ components:
         - model
         - createdAt
         - updatedAt
+
+    AutoNameConversationResult:
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+        - title
+
+    PinConversationResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        pinnedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - pinnedAt
+
+    DuplicateConversationResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        model:
+          type: string
+        pinnedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+      required:
+        - id
+        - title
+        - model
+        - createdAt
+        - updatedAt
+        - messageCount
 
     AnthropicMessage:
       type: object

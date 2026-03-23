@@ -6,6 +6,7 @@ export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
   title: text("title").notNull().default("New Chat"),
   model: text("model").notNull().default("claude-sonnet-4-6"),
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

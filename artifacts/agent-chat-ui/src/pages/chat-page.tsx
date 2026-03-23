@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Zap, Code, TerminalSquare, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
+import { MessageSquare, Zap, Code, TerminalSquare, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useListAnthropicMessages, useListExecutions, useCreateAnthropicConversation } from "@workspace/api-client-react";
@@ -16,6 +16,67 @@ import { ToolExecutionCard } from "@/components/chat/tool-execution-card";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
+
+function friendlyErrorMessage(err: Error): string {
+  const msg = err.message.toLowerCase();
+  if (msg.includes("abort") || msg.includes("cancel")) return "The request was cancelled.";
+  if (msg.includes("network") || msg.includes("fetch") || msg.includes("failed to fetch"))
+    return "Connection to the server failed. Check your network and try again.";
+  if (msg.includes("timeout")) return "The request timed out. The server may be busy.";
+  if (msg.includes("401") || msg.includes("403") || msg.includes("permission"))
+    return "Permission denied. You may not have access to this resource.";
+  if (msg.includes("404")) return "Resource not found. It may have been deleted.";
+  if (msg.includes("429")) return "Too many requests. Please wait a moment and try again.";
+  if (msg.includes("500") || msg.includes("502") || msg.includes("503"))
+    return "The server encountered an error. Try again in a moment.";
+  return "Something went wrong while sending your message. Please try again.";
+}
+
+function ErrorBanner({ error, onDismiss }: { error: Error; onDismiss: () => void }) {
+  const [showDetails, setShowDetails] = useState(false);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      className="mx-6 mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4"
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-red-300 font-medium">{friendlyErrorMessage(error)}</p>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              onClick={() => setShowDetails(p => !p)}
+              className="flex items-center gap-1 text-xs text-red-400/70 hover:text-red-300 transition-colors"
+            >
+              {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {showDetails ? "Hide technical details" : "View technical details"}
+            </button>
+            <button
+              onClick={onDismiss}
+              className="text-xs text-muted-foreground hover:text-white transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+          <AnimatePresence>
+            {showDetails && (
+              <motion.pre
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="mt-3 text-xs font-mono text-red-300/70 bg-black/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all"
+              >
+                {error.stack ?? error.message}
+              </motion.pre>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function LiveExecutionBadge({ exec }: { exec: LiveToolExecution }) {
   const isDone = exec.phase === "done";
@@ -67,6 +128,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<{ text: string; attachmentIds?: number[]; toolParams?: ToolParams } | null>(null);
+  const [streamError, setStreamError] = useState<Error | null>(null);
 
   const { model, setModel, mode, setMode } = useLocalSettings();
   const createMutation = useCreateAnthropicConversation();
@@ -85,6 +147,7 @@ export default function ChatPage() {
     conversationId: conversationId || 0,
     model,
     mode,
+    onError: (err) => setStreamError(err),
   });
 
   useEffect(() => {
@@ -117,6 +180,7 @@ export default function ChatPage() {
   }, [conversationId, pendingMessage, sendMessage]);
 
   const handleSend = useCallback((text: string, attachmentIds?: number[], toolParams?: ToolParams) => {
+    setStreamError(null);
     if (!conversationId) {
       // Auto-create a new conversation then send
       createMutation.mutate(
@@ -285,6 +349,13 @@ export default function ChatPage() {
             </div>
           )}
         </div>
+
+        {/* Error Banner */}
+        <AnimatePresence>
+          {streamError && (
+            <ErrorBanner error={streamError} onDismiss={() => setStreamError(null)} />
+          )}
+        </AnimatePresence>
 
         {/* Input Area */}
         <div className="w-full bg-gradient-to-t from-background via-background to-transparent pt-6 shrink-0">

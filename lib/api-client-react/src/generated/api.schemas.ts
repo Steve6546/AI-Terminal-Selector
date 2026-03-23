@@ -13,9 +13,29 @@ export interface AnthropicConversation {
   id: number;
   title: string;
   model: string;
+  pinnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount?: number;
+}
+
+export interface AutoNameConversationResult {
+  title: string;
+}
+
+export interface PinConversationResult {
+  id: number;
+  pinnedAt: string | null;
+}
+
+export interface DuplicateConversationResult {
+  id: number;
+  title: string;
+  model: string;
+  pinnedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
 }
 
 export interface AnthropicMessage {

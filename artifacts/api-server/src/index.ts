@@ -2,6 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { attachTerminalServer } from "./lib/terminal-server";
+import { startHealthCheckJob } from "./lib/health-check-job";
 
 const rawPort = process.env["PORT"];
 
@@ -22,6 +23,7 @@ attachTerminalServer(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  startHealthCheckJob();
 });
 
 server.on("error", (err) => {

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicMessagesQueryKey, getListExecutionsQueryKey, getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
+import { getListAnthropicMessagesQueryKey, getListExecutionsQueryKey, getListAnthropicConversationsQueryKey, autoNameAnthropicConversation } from "@workspace/api-client-react";
 
 export interface LiveToolExecution {
   phase: "planning" | "starting" | "selecting-server" | "running" | "done";
@@ -19,9 +19,10 @@ interface StreamOptions {
   mode?: string;
   onFinish?: () => void;
   onError?: (err: Error) => void;
+  onAutoNamed?: (title: string) => void;
 }
 
-export function useChatStream({ conversationId, model, mode = "agent", onFinish, onError }: StreamOptions) {
+export function useChatStream({ conversationId, model, mode = "agent", onFinish, onError, onAutoNamed }: StreamOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const [liveExecutions, setLiveExecutions] = useState<LiveToolExecution[]>([]);
@@ -147,8 +148,16 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
         queryKey: getListAnthropicConversationsQueryKey(),
       });
       onFinish?.();
+
+      // Trigger AI-based auto-naming after the first reply (asynchronously, don't block)
+      autoNameAnthropicConversation(conversationId)
+        .then((result) => {
+          queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
+          onAutoNamed?.(result.title);
+        })
+        .catch(() => { /* ignore auto-naming failures */ });
     }
-  }, [conversationId, model, mode, queryClient, onFinish, onError]);
+  }, [conversationId, model, mode, queryClient, onFinish, onError, onAutoNamed]);
 
   const stopStream = useCallback(() => {
     abortControllerRef.current?.abort();

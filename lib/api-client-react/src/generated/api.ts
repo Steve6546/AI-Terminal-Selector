@@ -21,6 +21,7 @@ import type {
   AnthropicConversationWithMessages,
   AnthropicError,
   AnthropicMessage,
+  AutoNameConversationResult,
   Attachment,
   CreateAnthropicConversationBody,
   CreateAttachmentBody,
@@ -29,6 +30,7 @@ import type {
   CreateDatabaseConnectionBody,
   UpdateDatabaseConnectionBody,
   DatabaseConnectionTestResult,
+  DuplicateConversationResult,
   Execution,
   ExecutionLog,
   ExecutionLogExtended,
@@ -41,6 +43,7 @@ import type {
   McpResource,
   McpServer,
   McpTool,
+  PinConversationResult,
   SendAnthropicMessageBody,
   SettingsMap,
   SystemStatus,
@@ -571,6 +574,156 @@ export const useUpdateAnthropicConversation = <
 > => {
   return useMutation(getUpdateAnthropicConversationMutationOptions(options));
 };
+
+// ─── Auto-name ────────────────────────────────────────────────────────────────
+export const getAutoNameAnthropicConversationUrl = (id: number) =>
+  `/api/anthropic/conversations/${id}/auto-name`;
+
+export const autoNameAnthropicConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AutoNameConversationResult> => {
+  return customFetch<AutoNameConversationResult>(
+    getAutoNameAnthropicConversationUrl(id),
+    { ...options, method: "POST" },
+  );
+};
+
+export const useAutoNameAnthropicConversation = <
+  TError = ErrorType<AnthropicError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoNameAnthropicConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof autoNameAnthropicConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation({
+    mutationFn: ({ id }) => autoNameAnthropicConversation(id),
+    ...options?.mutation,
+  });
+};
+
+// ─── Pin ──────────────────────────────────────────────────────────────────────
+export const getPinAnthropicConversationUrl = (id: number) =>
+  `/api/anthropic/conversations/${id}/pin`;
+
+export const pinAnthropicConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PinConversationResult> => {
+  return customFetch<PinConversationResult>(getPinAnthropicConversationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const usePinAnthropicConversation = <
+  TError = ErrorType<AnthropicError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pinAnthropicConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pinAnthropicConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation({
+    mutationFn: ({ id }) => pinAnthropicConversation(id),
+    ...options?.mutation,
+  });
+};
+
+// ─── Unpin ────────────────────────────────────────────────────────────────────
+export const getUnpinAnthropicConversationUrl = (id: number) =>
+  `/api/anthropic/conversations/${id}/unpin`;
+
+export const unpinAnthropicConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PinConversationResult> => {
+  return customFetch<PinConversationResult>(
+    getUnpinAnthropicConversationUrl(id),
+    { ...options, method: "POST" },
+  );
+};
+
+export const useUnpinAnthropicConversation = <
+  TError = ErrorType<AnthropicError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unpinAnthropicConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unpinAnthropicConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation({
+    mutationFn: ({ id }) => unpinAnthropicConversation(id),
+    ...options?.mutation,
+  });
+};
+
+// ─── Duplicate ────────────────────────────────────────────────────────────────
+export const getDuplicateAnthropicConversationUrl = (id: number) =>
+  `/api/anthropic/conversations/${id}/duplicate`;
+
+export const duplicateAnthropicConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DuplicateConversationResult> => {
+  return customFetch<DuplicateConversationResult>(
+    getDuplicateAnthropicConversationUrl(id),
+    { ...options, method: "POST" },
+  );
+};
+
+export const useDuplicateAnthropicConversation = <
+  TError = ErrorType<AnthropicError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof duplicateAnthropicConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof duplicateAnthropicConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation({
+    mutationFn: ({ id }) => duplicateAnthropicConversation(id),
+    ...options?.mutation,
+  });
+};
+
+// ─── Export URL helper ────────────────────────────────────────────────────────
+export const getExportAnthropicConversationUrl = (
+  id: number,
+  format: "json" | "markdown" = "json",
+) => `/api/anthropic/conversations/${id}/export?format=${format}`;
 
 /**
  * @summary List messages in a conversation

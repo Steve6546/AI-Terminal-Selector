@@ -22,6 +22,7 @@ router.get("/conversations", async (req, res) => {
         id: conversations.id,
         title: conversations.title,
         model: conversations.model,
+        pinnedAt: conversations.pinnedAt,
         createdAt: conversations.createdAt,
         updatedAt: conversations.updatedAt,
         messageCount: count(messages.id),
@@ -31,11 +32,20 @@ router.get("/conversations", async (req, res) => {
       .groupBy(conversations.id)
       .orderBy(desc(conversations.updatedAt));
 
+    // Sort: pinned first (desc pinnedAt), then by updatedAt desc
+    const sorted = [...rows].sort((a, b) => {
+      const aPin = a.pinnedAt ? a.pinnedAt.getTime() : 0;
+      const bPin = b.pinnedAt ? b.pinnedAt.getTime() : 0;
+      if (aPin !== bPin) return bPin - aPin; // pinned first
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+
     res.json(
-      rows.map((r) => ({
+      sorted.map((r) => ({
         id: r.id,
         title: r.title,
         model: r.model,
+        pinnedAt: r.pinnedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
         messageCount: Number(r.messageCount),
@@ -859,6 +869,197 @@ router.post("/conversations/:id/messages", async (req, res) => {
       );
       res.end();
     }
+  }
+});
+
+// ─── POST /conversations/:id/auto-name ────────────────────────────────────────
+// Use Claude to generate a concise title from the first two messages
+router.post("/conversations/:id/auto-name", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    if (!conv) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const msgs = await db
+      .select({ role: messages.role, content: messages.content })
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(messages.createdAt)
+      .limit(4);
+
+    if (msgs.length === 0) {
+      res.json({ title: conv.title });
+      return;
+    }
+
+    const prompt = msgs
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .join("\n");
+
+    const naming = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 32,
+      messages: [
+        {
+          role: "user",
+          content: `Generate a concise chat title (3-6 words, no quotes, no punctuation at end) for this conversation:\n\n${prompt}\n\nTitle:`,
+        },
+      ],
+    });
+
+    const raw = naming.content[0]?.type === "text" ? naming.content[0].text.trim() : "";
+    const title = raw.replace(/^["']|["']$/g, "").replace(/\.$/, "").slice(0, 80) || conv.title;
+
+    await db.update(conversations).set({ title, updatedAt: new Date() }).where(eq(conversations.id, id));
+
+    res.json({ title });
+  } catch (err) {
+    req.log.error({ err }, "Failed to auto-name conversation");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
+// ─── POST /conversations/:id/pin ──────────────────────────────────────────────
+router.post("/conversations/:id/pin", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(conversations)
+      .set({ pinnedAt: new Date(), updatedAt: new Date() })
+      .where(eq(conversations.id, id))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+    res.json({ id: updated.id, pinnedAt: updated.pinnedAt?.toISOString() ?? null });
+  } catch (err) {
+    req.log.error({ err }, "Failed to pin conversation");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
+// ─── POST /conversations/:id/unpin ────────────────────────────────────────────
+router.post("/conversations/:id/unpin", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(conversations)
+      .set({ pinnedAt: null, updatedAt: new Date() })
+      .where(eq(conversations.id, id))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+    res.json({ id: updated.id, pinnedAt: null });
+  } catch (err) {
+    req.log.error({ err }, "Failed to unpin conversation");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
+// ─── POST /conversations/:id/duplicate ────────────────────────────────────────
+router.post("/conversations/:id/duplicate", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    if (!conv) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const [newConv] = await db
+      .insert(conversations)
+      .values({ title: `${conv.title} (copy)`, model: conv.model })
+      .returning();
+
+    const msgs = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(messages.createdAt);
+
+    if (msgs.length > 0) {
+      await db.insert(messages).values(
+        msgs.map((m) => ({
+          conversationId: newConv.id,
+          role: m.role,
+          content: m.content,
+          model: m.model,
+        }))
+      );
+    }
+
+    res.status(201).json({
+      id: newConv.id,
+      title: newConv.title,
+      model: newConv.model,
+      pinnedAt: null,
+      createdAt: newConv.createdAt.toISOString(),
+      updatedAt: newConv.updatedAt.toISOString(),
+      messageCount: msgs.length,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to duplicate conversation");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
+// ─── GET /conversations/:id/export ────────────────────────────────────────────
+router.get("/conversations/:id/export", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const format = (req.query.format as string) === "markdown" ? "markdown" : "json";
+
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    if (!conv) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const msgs = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(messages.createdAt);
+
+    if (format === "markdown") {
+      const lines: string[] = [`# ${conv.title}`, ``, `*Model: ${conv.model} | Created: ${conv.createdAt.toISOString()}*`, ``];
+      for (const m of msgs) {
+        lines.push(`## ${m.role === "user" ? "You" : "Assistant"}`);
+        lines.push(m.content);
+        lines.push("");
+      }
+      const md = lines.join("\n");
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="chat-${id}.md"`);
+      res.send(md);
+    } else {
+      const payload = {
+        id: conv.id,
+        title: conv.title,
+        model: conv.model,
+        createdAt: conv.createdAt.toISOString(),
+        updatedAt: conv.updatedAt.toISOString(),
+        messages: msgs.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          model: m.model,
+          createdAt: m.createdAt.toISOString(),
+        })),
+      };
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="chat-${id}.json"`);
+      res.json(payload);
+    }
+  } catch (err) {
+    req.log.error({ err }, "Failed to export conversation");
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
