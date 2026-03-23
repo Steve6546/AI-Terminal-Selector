@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { mcpServers } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { serverStatusEmitter } from "./server-status-emitter";
 
 const CHECK_INTERVAL_MS = 60_000;
 
@@ -30,8 +31,16 @@ async function runHealthChecks() {
       // Only check HTTP-based transports (not stdio/local)
       if (server.transportType !== "streamable-http" && server.transportType !== "sse") continue;
       const status = await checkServerHealth(server);
-      await db.update(mcpServers).set({ status, lastCheckedAt: new Date() }).where(eq(mcpServers.id, server.id));
+      const lastCheckedAt = new Date();
+      await db.update(mcpServers).set({ status, lastCheckedAt }).where(eq(mcpServers.id, server.id));
       logger.debug({ serverId: server.id, name: server.name, status }, "Health check complete");
+      // Broadcast to SSE subscribers so UI can update without waiting for next poll
+      serverStatusEmitter.broadcast({
+        serverId: server.id,
+        name: server.name,
+        status,
+        lastCheckedAt: lastCheckedAt.toISOString(),
+      });
     }
   } catch (err) {
     logger.error({ err }, "Health check job failed");

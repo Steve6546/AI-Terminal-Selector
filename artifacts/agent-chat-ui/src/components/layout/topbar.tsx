@@ -1,6 +1,8 @@
 import { SettingsMapDefaultModel, useGetSystemStatus } from "@workspace/api-client-react";
-import { Settings, Zap, TerminalSquare } from "lucide-react";
+import { Settings, Zap, TerminalSquare, Wifi, WifiOff } from "lucide-react";
 import { Link } from "wouter";
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Select,
   SelectContent,
@@ -17,21 +19,54 @@ interface TopBarProps {
 }
 
 export function TopBar({ model, onModelChange, onTerminalToggle }: TopBarProps) {
+  const queryClient = useQueryClient();
   const { data: status } = useGetSystemStatus({ query: { refetchInterval: 30_000, queryKey: ["system-status"] } });
+
+  // Subscribe to real-time health-check events from the server so the UI
+  // updates immediately when an MCP server's status changes (no 30s poll wait).
+  useEffect(() => {
+    const es = new EventSource("/api/system/status/events");
+
+    es.addEventListener("server_status", () => {
+      // Invalidate system-status query so it refetches the latest aggregate counts
+      queryClient.invalidateQueries({ queryKey: ["system-status"] });
+    });
+
+    es.onerror = () => {
+      // Connection dropped — browser will auto-reconnect; no action needed
+    };
+
+    return () => es.close();
+  }, [queryClient]);
+
+  const connected = status?.connectedServers ?? 0;
+  const disconnected = status?.disconnectedServers ?? 0;
+  const totalServers = connected + disconnected;
 
   return (
     <div className="h-14 w-full flex items-center justify-between px-6 glass-panel border-b border-white/5 relative z-10 shrink-0">
 
       {/* System Status Pills */}
       <div className="flex items-center gap-3">
+        {/* Connected servers */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-white/5 text-xs font-medium text-muted-foreground">
-          <div className={cn(
-            "w-2 h-2 rounded-full",
-            (status?.connectedServers || 0) > 0 ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-red-500"
+          <Wifi className={cn(
+            "w-3.5 h-3.5",
+            connected > 0 ? "text-green-500" : "text-muted-foreground"
           )} />
-          <span className="text-white">{status?.connectedServers || 0}</span> Servers
+          <span className="text-white">{connected}</span>
+          <span>/{totalServers} Connected</span>
         </div>
 
+        {/* Disconnected count — only visible when there are failures */}
+        {disconnected > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-xs font-medium text-red-400">
+            <WifiOff className="w-3.5 h-3.5" />
+            <span>{disconnected} Down</span>
+          </div>
+        )}
+
+        {/* Tool count */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-white/5 text-xs font-medium text-muted-foreground hidden sm:flex">
           <Zap className="w-3.5 h-3.5 text-yellow-500" />
           <span className="text-white">{status?.totalTools || 0}</span> Tools Ready

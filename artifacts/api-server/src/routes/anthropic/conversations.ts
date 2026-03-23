@@ -844,17 +844,10 @@ router.post("/conversations/:id/messages", async (req, res) => {
       model,
     });
 
-    // Auto-title: if still default title, derive from first user message
-    const updatePayload: Partial<typeof conversations.$inferInsert> = { updatedAt: new Date() };
-    if (conv.title === "New Conversation") {
-      const userMsg = body.content.trim().replace(/\s+/g, " ");
-      const autoTitle = userMsg.length > 60 ? userMsg.slice(0, 57) + "..." : userMsg;
-      if (autoTitle) updatePayload.title = autoTitle;
-    }
-
+    // Only update updatedAt here; AI-based auto-naming is handled by /auto-name endpoint
     await db
       .update(conversations)
-      .set(updatePayload)
+      .set({ updatedAt: new Date() })
       .where(eq(conversations.id, convId));
 
     sendEvent({ done: true });

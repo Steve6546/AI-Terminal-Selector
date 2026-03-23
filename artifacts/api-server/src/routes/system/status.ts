@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { mcpServers, mcpTools, executions } from "@workspace/db";
 import { eq, count } from "drizzle-orm";
 import { handleRouteError } from "../../lib/handle-error";
+import { serverStatusEmitter } from "../../lib/server-status-emitter";
 
 const router: IRouter = Router();
 
@@ -114,6 +115,33 @@ router.get("/executions", async (req, res) => {
     req.log.error({ err }, "Failed to list executions");
     handleRouteError(res, err, "Internal server error");
   }
+});
+
+// ─── GET /system/status/events ────────────────────────────────────────────────
+// SSE stream that emits server health status changes from the health-check job.
+// Clients receive `server_status` events whenever a server's health is updated.
+router.get("/status/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  // Send a heartbeat every 30s to keep the connection alive
+  const heartbeat = setInterval(() => {
+    res.write(": heartbeat\n\n");
+  }, 30_000);
+
+  const onStatus = (event: unknown) => {
+    res.write(`event: server_status\ndata: ${JSON.stringify(event)}\n\n`);
+  };
+
+  serverStatusEmitter.on("status", onStatus);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    serverStatusEmitter.off("status", onStatus);
+  });
 });
 
 export default router;
