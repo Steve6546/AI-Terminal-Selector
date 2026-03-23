@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { settings } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { handleRouteError } from "../lib/handle-error";
 
 const router: IRouter = Router();
 
@@ -35,7 +36,7 @@ router.get("/settings", async (req, res) => {
     res.json(settingsMap);
   } catch (err) {
     req.log.error({ err }, "Failed to get settings");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -78,7 +79,7 @@ router.put("/settings", async (req, res) => {
     res.json(settingsMap);
   } catch (err) {
     req.log.error({ err }, "Failed to update settings");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 

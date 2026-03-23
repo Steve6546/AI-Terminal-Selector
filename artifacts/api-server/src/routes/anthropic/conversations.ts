@@ -8,6 +8,7 @@ import {
   SendAnthropicMessageBody,
 } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { handleRouteError } from "../../lib/handle-error";
 
 const router: IRouter = Router();
 
@@ -39,7 +40,7 @@ router.get("/conversations", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list conversations");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -64,7 +65,7 @@ router.post("/conversations", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create conversation");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -104,7 +105,7 @@ router.get("/conversations/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get conversation");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -124,7 +125,7 @@ router.delete("/conversations/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete conversation");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -160,7 +161,7 @@ router.patch("/conversations/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update conversation");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -185,7 +186,7 @@ router.get("/conversations/:id/messages", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list messages");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -266,7 +267,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to send message");
     if (!res.headersSent) {
-      res.status(500).json({ error: "Internal server error" });
+      handleRouteError(res, err, "Internal server error");
     } else {
       res.write(
         `data: ${JSON.stringify({ error: "Stream error occurred" })}\n\n`

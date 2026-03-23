@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { executionLogs, executions } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
+import { handleRouteError } from "../lib/handle-error";
 
 const router: IRouter = Router();
 
@@ -37,7 +38,7 @@ router.get("/executions/:executionId/logs", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list execution logs");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 

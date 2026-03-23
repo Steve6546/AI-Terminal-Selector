@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { executions, mcpServers } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { handleRouteError } from "../lib/handle-error";
 
 const router: IRouter = Router();
 
@@ -63,7 +64,7 @@ router.get("/executions", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list executions");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 

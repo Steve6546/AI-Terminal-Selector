@@ -8,6 +8,7 @@ import {
   UpdateMcpToolBody,
 } from "@workspace/api-zod";
 import { maskSecret } from "../../lib/secret-utils";
+import { handleRouteError } from "../../lib/handle-error";
 
 const router: IRouter = Router();
 
@@ -54,7 +55,7 @@ router.get("/mcp-servers", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list MCP servers");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -96,7 +97,7 @@ router.post("/mcp-servers", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create MCP server");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -135,7 +136,7 @@ router.get("/mcp-servers/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get MCP server");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -192,7 +193,7 @@ router.patch("/mcp-servers/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update MCP server");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -212,7 +213,7 @@ router.delete("/mcp-servers/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete MCP server");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -288,7 +289,7 @@ router.post("/mcp-servers/:id/test", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to test MCP server");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -331,7 +332,7 @@ router.post("/mcp-servers/:id/discover", async (req, res) => {
     res.json([]);
   } catch (err) {
     req.log.error({ err }, "Failed to discover tools");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -369,7 +370,7 @@ router.get("/mcp-servers/:id/tools", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list tools");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -412,7 +413,7 @@ router.patch("/mcp-tools/:toolId", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update tool");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 

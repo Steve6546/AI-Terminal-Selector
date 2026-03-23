@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { attachments } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
+import { handleRouteError } from "../lib/handle-error";
 
 const router: IRouter = Router();
 
@@ -34,7 +35,7 @@ router.get("/attachments", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Failed to list attachments");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -71,7 +72,7 @@ router.post("/attachments", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create attachment");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -91,7 +92,7 @@ router.delete("/attachments/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete attachment");
-    res.status(500).json({ error: "Internal server error" });
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
