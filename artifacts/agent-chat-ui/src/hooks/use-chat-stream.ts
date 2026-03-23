@@ -120,10 +120,16 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                 });
               });
             } else if (data.error) {
-              console.error("Stream error from server:", data.error);
+              // Server-side error surfaced through the stream — propagate to UI
+              const streamErr = new Error(
+                typeof data.error === "string" ? data.error : JSON.stringify(data.error)
+              );
+              onError?.(streamErr);
+              return; // Stop processing; no auto-naming on error
             }
-          } catch {
-            // ignore parse errors
+          } catch (parseErr) {
+            // SSE line failed to parse — surface as a non-fatal error
+            onError?.(new Error(`Failed to parse server response: ${String(parseErr)}`));
           }
         }
       }
