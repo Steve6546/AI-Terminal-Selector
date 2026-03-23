@@ -23,6 +23,7 @@
 - Multi-conversation chat with Claude AI streaming (SSE)
 - Model selector: Claude Sonnet 4.6 / Claude Opus 4.6
 - MCP server management (add, test, discover tools)
+- **AI Assistant sidebar** on MCP Servers page: slides in from the right, powered by gpt-5.2 via SSE streaming, understands natural language commands to create/edit/delete/toggle/test/clone servers, shows confirmation action cards, maintains conversation memory within session
 - Agent mode vs Tool mode in chat
 - Dark-mode UI with glowing accents, framer-motion animations
 - System status bar (connected servers, tools count, agent state) — polls every 30s

@@ -25,7 +25,9 @@ import {
   Key,
   Lock,
   Globe,
+  Sparkles,
 } from "lucide-react";
+import McpAgentSidebar from "@/components/mcp/mcp-agent-sidebar";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
@@ -589,6 +591,7 @@ export default function McpServersPage() {
 
   const [showFormDialog, setShowFormDialog] = useState(false);
   const [editingServer, setEditingServer] = useState<McpServer | null>(null);
+  const [showAgentSidebar, setShowAgentSidebar] = useState(false);
 
   const handleDelete = (e: React.MouseEvent, server: McpServer) => {
     e.stopPropagation();
@@ -610,8 +613,19 @@ export default function McpServersPage() {
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
+      <McpAgentSidebar
+        open={showAgentSidebar}
+        onClose={() => setShowAgentSidebar(false)}
+        servers={servers ?? []}
+      />
+
       {/* Full-width management layout — no sidebar */}
-      <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+      <main
+        className={cn(
+          "flex-1 overflow-y-auto p-8 custom-scrollbar transition-all duration-300",
+          showAgentSidebar && "lg:pr-[396px]"
+        )}
+      >
         <div className="max-w-5xl mx-auto">
           {/* Back button */}
           <button
@@ -629,15 +643,30 @@ export default function McpServersPage() {
                 Connect tools and data sources via Model Context Protocol.
               </p>
             </div>
-            <button
-              onClick={() => {
-                setEditingServer(null);
-                setShowFormDialog(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl font-medium shadow-lg glow-effect transition-transform hover:-translate-y-0.5"
-            >
-              <Plus className="w-4 h-4" /> Add Server
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAgentSidebar((v) => !v)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all",
+                  showAgentSidebar
+                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30"
+                    : "bg-secondary/60 text-muted-foreground border border-white/8 hover:text-white hover:bg-secondary"
+                )}
+                title="Open AI Assistant"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="hidden sm:inline">AI Assistant</span>
+              </button>
+              <button
+                onClick={() => {
+                  setEditingServer(null);
+                  setShowFormDialog(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl font-medium shadow-lg glow-effect transition-transform hover:-translate-y-0.5"
+              >
+                <Plus className="w-4 h-4" /> Add Server
+              </button>
+            </div>
           </div>
 
           {isLoading ? (
