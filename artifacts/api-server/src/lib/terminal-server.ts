@@ -1,10 +1,34 @@
 /**
  * WebSocket terminal server using ws + node-pty.
  * Runs a bash shell and bridges stdin/stdout/resize over WebSocket.
+ * Auth: caller must present a one-time token obtained from GET /api/terminal/token.
  */
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import type { Server } from "http";
+import { randomUUID } from "crypto";
+
+const TOKEN_TTL_MS = 60_000;
+const pendingTokens = new Map<string, number>(); // token → expiry timestamp
+
+/** Generate a one-time terminal auth token (valid for 60 s). */
+export function issueTerminalToken(): string {
+  const token = randomUUID();
+  pendingTokens.set(token, Date.now() + TOKEN_TTL_MS);
+  // Prune stale tokens
+  for (const [t, exp] of pendingTokens) {
+    if (exp < Date.now()) pendingTokens.delete(t);
+  }
+  return token;
+}
+
+function consumeToken(token: string | null): boolean {
+  if (!token) return false;
+  const exp = pendingTokens.get(token);
+  if (!exp || exp < Date.now()) return false;
+  pendingTokens.delete(token);
+  return true;
+}
 
 export function attachTerminalServer(httpServer: Server): void {
   const wss = new WebSocketServer({ noServer: true });
@@ -15,6 +39,16 @@ export function attachTerminalServer(httpServer: Server): void {
       socket.destroy();
       return;
     }
+
+    const token = url.searchParams.get("token");
+    if (!consumeToken(token)) {
+      socket.write(
+        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+      );
+      socket.destroy();
+      return;
+    }
+
     wss.handleUpgrade(req, socket as never, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -73,19 +107,11 @@ export function attachTerminalServer(httpServer: Server): void {
     });
 
     ws.on("close", () => {
-      try {
-        ptyProcess.kill();
-      } catch {
-        // Already dead
-      }
+      try { ptyProcess.kill(); } catch { /* Already dead */ }
     });
 
     ws.on("error", () => {
-      try {
-        ptyProcess.kill();
-      } catch {
-        // Already dead
-      }
+      try { ptyProcess.kill(); } catch { /* Already dead */ }
     });
   });
 }

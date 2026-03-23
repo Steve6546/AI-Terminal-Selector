@@ -19,29 +19,38 @@ import { cn } from "@/lib/utils";
 
 function LiveExecutionBadge({ exec }: { exec: LiveToolExecution }) {
   const isDone = exec.phase === "done";
-  const isRunning = exec.phase === "running";
+  const isRunning = exec.phase === "running" || exec.phase === "selecting-server";
+  const isPlanning = exec.phase === "planning";
+
+  const badgeColor = isDone && exec.success
+    ? "bg-green-500/10 border-green-500/20 text-green-400"
+    : isDone && !exec.success
+    ? "bg-red-500/10 border-red-500/20 text-red-400"
+    : isPlanning
+    ? "bg-violet-500/10 border-violet-500/20 text-violet-300"
+    : "bg-blue-500/10 border-blue-500/20 text-blue-400";
+
+  const label = isPlanning
+    ? (exec.message ?? "Planning...")
+    : exec.phase === "selecting-server"
+    ? `Selecting: ${exec.serverName ?? "server"}`
+    : exec.toolName ?? "tool";
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      className={cn(
-        "inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono border",
-        isDone && exec.success
-          ? "bg-green-500/10 border-green-500/20 text-green-400"
-          : isDone && !exec.success
-          ? "bg-red-500/10 border-red-500/20 text-red-400"
-          : "bg-blue-500/10 border-blue-500/20 text-blue-400"
-      )}
+      className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono border", badgeColor)}
     >
       {isDone ? (
         exec.success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />
-      ) : isRunning ? (
+      ) : (isRunning || isPlanning) ? (
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
       ) : (
         <Clock className="w-3.5 h-3.5" />
       )}
-      <span>{exec.toolName}</span>
-      {exec.serverName && (
+      <span>{label}</span>
+      {!isPlanning && exec.serverName && (
         <span className="opacity-60">@ {exec.serverName}</span>
       )}
       {isDone && exec.durationMs != null && (

@@ -3,13 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getListAnthropicMessagesQueryKey, getListExecutionsQueryKey, getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
 
 export interface LiveToolExecution {
-  phase: "starting" | "running" | "done";
+  phase: "planning" | "starting" | "selecting-server" | "running" | "done";
   executionId?: number;
-  toolName: string;
+  toolName?: string;
   serverId?: number | null;
   serverName?: string | null;
   success?: boolean;
   durationMs?: number;
+  message?: string;
 }
 
 interface StreamOptions {
@@ -82,8 +83,16 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
             } else if (data.tool_execution) {
               const exec = data.tool_execution as LiveToolExecution;
               setLiveExecutions((prev) => {
+                if (exec.phase === "planning") {
+                  // Planning is a global status indicator — replace or add at front
+                  const hasPlan = prev.some((e) => e.phase === "planning");
+                  if (hasPlan) return prev.map((e) => e.phase === "planning" ? { ...e, ...exec } : e);
+                  return [exec, ...prev];
+                }
                 if (exec.phase === "starting") {
-                  return [...prev, exec];
+                  // Remove planning indicator when first tool starts
+                  const without = prev.filter((e) => e.phase !== "planning");
+                  return [...without, exec];
                 }
                 return prev.map((e) =>
                   e.toolName === exec.toolName &&

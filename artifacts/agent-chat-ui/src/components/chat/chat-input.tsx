@@ -192,7 +192,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={mode === "Agent" ? "Ask the agent to do something..." : "Type a manual tool command..."}
+            placeholder={mode === "agent" ? "Ask the agent to do something..." : "Type a message (tool-free mode)..."}
             className="flex-1 bg-transparent border-0 outline-none resize-none py-2 text-sm text-foreground placeholder:text-muted-foreground max-h-64 custom-scrollbar"
             minRows={1}
             maxRows={8}
@@ -203,19 +203,19 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
             {/* Mode Toggle */}
             <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
               <button
-                onClick={() => onModeChange("Agent")}
+                onClick={() => onModeChange("agent")}
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all",
-                  mode === "Agent" ? "bg-primary text-white shadow-md" : "text-muted-foreground hover:text-white"
+                  mode === "agent" ? "bg-primary text-white shadow-md" : "text-muted-foreground hover:text-white"
                 )}
               >
                 <Bot className="w-3.5 h-3.5" /> Agent
               </button>
               <button
-                onClick={() => onModeChange("Tool")}
+                onClick={() => onModeChange("tool")}
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all",
-                  mode === "Tool" ? "bg-accent text-white shadow-md" : "text-muted-foreground hover:text-white"
+                  mode === "tool" ? "bg-accent text-white shadow-md" : "text-muted-foreground hover:text-white"
                 )}
               >
                 <Wrench className="w-3.5 h-3.5" /> Tool

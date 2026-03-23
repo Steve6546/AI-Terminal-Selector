@@ -366,6 +366,9 @@ router.post("/conversations/:id/messages", async (req, res) => {
       let loopCount = 0;
       const MAX_LOOPS = 10;
 
+      // Emit planning phase before first Claude call
+      sendEvent({ tool_execution: { phase: "planning", message: "Agent is planning next steps..." } });
+
       while (loopCount < MAX_LOOPS) {
         loopCount++;
 
@@ -480,6 +483,17 @@ router.post("/conversations/:id/messages", async (req, res) => {
               .where(eq(mcpServers.id, serverId));
             servConfig = srv ?? null;
           }
+
+          // Emit selecting-server phase
+          sendEvent({
+            tool_execution: {
+              phase: "selecting-server",
+              toolName: rawToolName,
+              serverId,
+              serverName: servConfig?.name ?? "unknown",
+              message: `Selecting server: ${servConfig?.name ?? "unknown"} for tool ${rawToolName}`,
+            },
+          });
 
           // Create execution record
           const [execRow] = await db

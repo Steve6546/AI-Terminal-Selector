@@ -4,10 +4,9 @@ import { SettingsMapDefaultModel } from "@workspace/api-client-react";
 const MODEL_KEY = "agent_chat_selected_model";
 const MODE_KEY = "agent_chat_mode";
 
-export type InteractionMode = "Agent" | "Tool";
+export type InteractionMode = "agent" | "tool";
 
 export function useLocalSettings() {
-  // Model Selection
   const [model, setModel] = useState<SettingsMapDefaultModel>(() => {
     const saved = localStorage.getItem(MODEL_KEY);
     if (saved === "claude-opus-4-6" || saved === "claude-sonnet-4-6") {
@@ -20,10 +19,13 @@ export function useLocalSettings() {
     localStorage.setItem(MODEL_KEY, model);
   }, [model]);
 
-  // Mode Selection (Agent vs Tool)
   const [mode, setMode] = useState<InteractionMode>(() => {
     const saved = localStorage.getItem(MODE_KEY);
-    return (saved as InteractionMode) || "Agent";
+    if (saved === "agent" || saved === "tool") return saved;
+    // Migrate old capitalized values
+    if (saved === "Agent") return "agent";
+    if (saved === "Tool") return "tool";
+    return "agent";
   });
 
   useEffect(() => {

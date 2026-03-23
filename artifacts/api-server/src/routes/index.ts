@@ -8,6 +8,7 @@ import settingsRouter from "./settings";
 import executionsRouter from "./executions";
 import logsRouter from "./logs";
 import attachmentsRouter from "./attachments";
+import terminalTokenRouter from "./terminal-token";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(settingsRouter);
 router.use(executionsRouter);
 router.use(logsRouter);
 router.use(attachmentsRouter);
+router.use(terminalTokenRouter);
 
 export default router;

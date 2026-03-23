@@ -17,7 +17,7 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!containerRef.current) return;
 
     // Cleanup existing terminal
@@ -72,9 +72,20 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Connect WebSocket
+    // Fetch one-time auth token then connect WebSocket
+    let token: string | null = null;
+    try {
+      const resp = await fetch("/api/terminal/token");
+      const data = await resp.json() as { token: string };
+      token = data.token;
+    } catch {
+      term.write("\r\n\x1b[31m[Could not obtain terminal token — is the API server running?]\x1b[0m\r\n");
+      setStatus("disconnected");
+      return;
+    }
+
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}/api/terminal`;
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/terminal?token=${encodeURIComponent(token)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
