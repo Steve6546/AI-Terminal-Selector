@@ -4,6 +4,7 @@ import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench,
 import { InteractionMode } from "@/hooks/use-local-settings";
 import { cn } from "@/lib/utils";
 import { useListMcpServers, useListMcpTools } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +39,7 @@ const ACCEPT_TYPES = "image/*,.pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.ts,.tsx,
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, conversationId }: ChatInputProps) {
+  const [, navigate] = useLocation();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -324,14 +326,41 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-border" />
               <DropdownMenuLabel className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Connectors</DropdownMenuLabel>
-              <DropdownMenuItem className="gap-3 py-2 cursor-pointer opacity-50" disabled>
-                <Database className="w-4 h-4 text-blue-400" /> Databases
+              <DropdownMenuItem
+                className="gap-3 py-2 cursor-pointer"
+                onClick={() => navigate("/settings?tab=databases")}
+              >
+                <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <Database className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-medium text-sm">Databases</span>
+                  <span className="text-[10px] text-muted-foreground">Manage DB connections</span>
+                </div>
               </DropdownMenuItem>
-              <DropdownMenuItem className="gap-3 py-2 cursor-pointer opacity-50" disabled>
-                <Server className="w-4 h-4 text-green-400" /> MCP Servers
+              <DropdownMenuItem
+                className="gap-3 py-2 cursor-pointer"
+                onClick={() => navigate("/settings?tab=mcp-servers")}
+              >
+                <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center">
+                  <Server className="w-4 h-4 text-green-400" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-medium text-sm">MCP Servers</span>
+                  <span className="text-[10px] text-muted-foreground">Configure MCP connections</span>
+                </div>
               </DropdownMenuItem>
-              <DropdownMenuItem className="gap-3 py-2 cursor-pointer opacity-50" disabled>
-                <Settings className="w-4 h-4 text-muted-foreground" /> Manage
+              <DropdownMenuItem
+                className="gap-3 py-2 cursor-pointer"
+                onClick={() => navigate("/settings")}
+              >
+                <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center">
+                  <Settings className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-medium text-sm">Manage Connectors</span>
+                  <span className="text-[10px] text-muted-foreground">All settings & integrations</span>
+                </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

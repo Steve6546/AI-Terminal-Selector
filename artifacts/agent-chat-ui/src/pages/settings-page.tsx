@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import {
   Settings, User, Shield, Activity, Server, Wrench, Palette,
@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 
 const TABS = [
   { id: "general", label: "General", icon: Settings },
@@ -779,19 +779,27 @@ function RawEventRow({ log }: { log: ExecutionLogExtended }) {
   );
 }
 
-function LogsTab({ executions }: { executions: { id: number; toolName: string; serverName?: string | null; status: string; durationMs?: number | null; startedAt: string }[] | undefined }) {
+function LogsTab({
+  executions,
+  mcpServers,
+}: {
+  executions: { id: number; toolName: string; serverName?: string | null; status: string; durationMs?: number | null; startedAt: string }[] | undefined;
+  mcpServers: McpServer[] | undefined;
+}) {
   const [view, setView] = useState<"executions" | "events">("executions");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [serverFilter, setServerFilter] = useState<string>("all");
 
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
+  const [serverIdFilter, setServerIdFilter] = useState<number | undefined>(undefined);
   const [afterFilter, setAfterFilter] = useState<string>("");
   const [beforeFilter, setBeforeFilter] = useState<string>("");
 
   const rawLogsParams = view === "events" ? {
     level: levelFilter !== "all" ? levelFilter : undefined,
     eventType: eventTypeFilter !== "all" ? eventTypeFilter : undefined,
+    serverId: serverIdFilter,
     after: afterFilter || undefined,
     before: beforeFilter || undefined,
     limit: 200,
@@ -923,6 +931,18 @@ function LogsTab({ executions }: { executions: { id: number; toolName: string; s
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+            {mcpServers && mcpServers.length > 0 && (
+              <select
+                value={serverIdFilter ?? "all"}
+                onChange={(e) => setServerIdFilter(e.target.value === "all" ? undefined : parseInt(e.target.value))}
+                className="bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-all"
+              >
+                <option value="all">All servers</option>
+                {mcpServers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            )}
             <input
               type="datetime-local"
               value={afterFilter}
@@ -1066,7 +1086,22 @@ function UISettingsTab({
 }
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("general");
+  const searchString = useSearch();
+  const initialTab = (() => {
+    const params = new URLSearchParams(searchString);
+    const tab = params.get("tab");
+    return tab && TABS.some((t) => t.id === tab) ? tab : "general";
+  })();
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const tab = params.get("tab");
+    if (tab && TABS.some((t) => t.id === tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchString]);
+
   const { data: settings, isLoading } = useGetSettings();
   const updateSettings = useUpdateSettings();
   const { data: mcpServers } = useListMcpServers();
@@ -1280,7 +1315,7 @@ export default function SettingsPage() {
                   )}
 
                   {activeTab === "logs" && (
-                    <LogsTab executions={executions} />
+                    <LogsTab executions={executions} mcpServers={mcpServers} />
                   )}
 
                   {activeTab === "ui" && (

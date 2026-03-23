@@ -688,6 +688,26 @@ router.post("/conversations/:id/messages", async (req, res) => {
         return;
       }
 
+      if (!toolRecord.enabled) {
+        sendEvent({ error: `Tool "${selectedToolName}" is disabled` });
+        sendEvent({ done: true });
+        res.end();
+        return;
+      }
+
+      const { approved: toolApproved } = rawBody as { approved?: boolean };
+      if (toolRecord.requiresApproval && !toolApproved) {
+        sendEvent({
+          error: `Tool "${selectedToolName}" requires explicit approval before execution`,
+          requiresApproval: true,
+          toolId: toolRecord.id,
+          toolName: selectedToolName,
+        });
+        sendEvent({ done: true });
+        res.end();
+        return;
+      }
+
       // Emit selecting-server phase
       sendEvent({
         tool_execution: {
