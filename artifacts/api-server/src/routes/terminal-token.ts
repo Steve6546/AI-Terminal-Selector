@@ -20,24 +20,24 @@ function isRateLimited(ip: string): boolean {
 
 /**
  * GET /api/terminal/token
- * Returns a one-time token that authorizes a single WebSocket terminal connection.
- * Requires X-Requested-With header (CSRF protection) and is rate-limited.
+ * Issues a one-time token bound to the caller's IP + origin.
+ * Requires X-Requested-With header (CSRF protection) and is rate-limited (10/min per IP).
  */
 router.get("/terminal/token", (req, res) => {
-  // CSRF protection: only allow XHR/fetch requests with this custom header
-  // (simple requests cannot set custom headers cross-origin)
+  // CSRF: reject simple cross-origin requests (cannot set custom headers cross-origin)
   if (!req.headers["x-requested-with"]) {
     res.status(403).json({ error: "Forbidden: missing required header" });
     return;
   }
 
-  const ip = (req.ip ?? "unknown").split(",")[0]?.trim() ?? "unknown";
+  const ip = ((req.ip ?? req.socket?.remoteAddress ?? "unknown")).split(",")[0]?.trim() ?? "unknown";
   if (isRateLimited(ip)) {
-    res.status(429).json({ error: "Too many requests" });
+    res.status(429).json({ error: "Too many requests — try again later" });
     return;
   }
 
-  const token = issueTerminalToken();
+  const origin = req.headers.origin ?? req.headers.host ?? "localhost";
+  const token = issueTerminalToken(ip, origin);
   res.json({ token });
 });
 

@@ -84,7 +84,6 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
               const exec = data.tool_execution as LiveToolExecution;
               setLiveExecutions((prev) => {
                 if (exec.phase === "planning") {
-                  // Planning is a global status indicator — replace or add at front
                   const hasPlan = prev.some((e) => e.phase === "planning");
                   if (hasPlan) return prev.map((e) => e.phase === "planning" ? { ...e, ...exec } : e);
                   return [exec, ...prev];
@@ -94,12 +93,13 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                   const without = prev.filter((e) => e.phase !== "planning");
                   return [...without, exec];
                 }
-                return prev.map((e) =>
-                  e.toolName === exec.toolName &&
-                  (e.executionId === exec.executionId || exec.executionId == null)
-                    ? { ...e, ...exec }
-                    : e
-                );
+                // For running/selecting-server/done: match by executionId if known, else by toolName
+                // This handles the case where "starting" had no executionId yet
+                return prev.map((e) => {
+                  const idMatch = exec.executionId != null && e.executionId === exec.executionId;
+                  const nameMatch = e.toolName === exec.toolName && e.executionId == null;
+                  return (idMatch || nameMatch) ? { ...e, ...exec } : e;
+                });
               });
             } else if (data.error) {
               console.error("Stream error from server:", data.error);

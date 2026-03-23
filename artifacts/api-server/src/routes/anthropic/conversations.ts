@@ -496,6 +496,51 @@ router.post("/conversations/:id/messages", async (req, res) => {
             },
           });
 
+          // Enforce requiresApproval policy: if the tool requires approval, skip execution
+          let toolRecord: typeof mcpTools.$inferSelect | null = null;
+          if (serverId) {
+            const [t] = await db
+              .select()
+              .from(mcpTools)
+              .where(and(eq(mcpTools.serverId, serverId), eq(mcpTools.toolName, rawToolName)));
+            toolRecord = t ?? null;
+          }
+
+          if (toolRecord?.requiresApproval) {
+            // Tool is policy-gated — record it as blocked and inform Claude
+            const [blockedExec] = await db
+              .insert(executions)
+              .values({
+                conversationId: convId,
+                serverId: serverId ?? null,
+                toolName: rawToolName,
+                status: "error",
+                arguments: block.input,
+                errorMessage: "Execution blocked: tool requires manual approval",
+                completedAt: new Date(),
+                durationMs: 0,
+              })
+              .returning();
+
+            sendEvent({
+              tool_execution: {
+                phase: "done",
+                executionId: blockedExec.id,
+                toolName: rawToolName,
+                serverId,
+                serverName: servConfig?.name,
+                success: false,
+              },
+            });
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: `Tool "${rawToolName}" requires manual approval before it can be executed. Ask the user to run it directly from the MCP Servers page or disable approval requirement in the server settings.`,
+            });
+            continue;
+          }
+
           // Create execution record
           const [execRow] = await db
             .insert(executions)
