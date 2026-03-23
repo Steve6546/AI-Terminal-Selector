@@ -35,6 +35,8 @@ function friendlyErrorMessage(err: Error): string {
   if (msg.includes("429")) return "Too many requests. Please wait a moment and try again.";
   if (msg.includes("500") || msg.includes("502") || msg.includes("503"))
     return "The server encountered an error. Try again in a moment.";
+  if (msg.includes("parse") || msg.includes("invalid json") || msg.includes("failed to parse"))
+    return "Received an unexpected response from the server. This may be a temporary issue.";
   return "Something went wrong while sending your message. Please try again.";
 }
 
