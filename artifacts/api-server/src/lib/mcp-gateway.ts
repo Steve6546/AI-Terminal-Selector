@@ -2,12 +2,16 @@
  * MCP Gateway Client — proxies test/discover requests to the Python FastAPI
  * agent-backend service running on AGENT_BACKEND_PORT (default 9000).
  *
- * The Python service implements the real MCP SDK calls so we have full stdio
- * and streamable-http support without spawning Node subprocesses inline.
+ * Auth: uses ADMIN_SECRET, falling back to SECRET_ENCRYPTION_KEY (matches
+ * what the Python gateway expects). Both env vars are Replit secrets.
+ *
+ * Retry: callGateway accepts a retryCount and retries with exponential backoff
+ * on transient failures (network errors, 5xx responses).
  */
 
 const AGENT_BACKEND_URL = `http://localhost:${process.env.AGENT_BACKEND_PORT ?? "9000"}`;
-const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "";
+const ADMIN_SECRET =
+  process.env.ADMIN_SECRET ?? process.env.SECRET_ENCRYPTION_KEY ?? "";
 
 export interface McpServerConfig {
   transportType: string;
@@ -17,6 +21,7 @@ export interface McpServerConfig {
   authType?: string;
   authSecret?: string | null;
   timeout?: number;
+  retryCount?: number;
 }
 
 export interface McpDiscoveryResult {
@@ -49,7 +54,11 @@ export interface McpTestResult {
   latencyMs: number;
 }
 
-async function callGateway<T>(
+/**
+ * Single attempt to call the Python gateway.
+ * Throws on network error or non-OK HTTP status.
+ */
+async function callGatewayOnce<T>(
   path: "/gateway/test" | "/gateway/discover",
   config: McpServerConfig
 ): Promise<T> {
@@ -71,6 +80,7 @@ async function callGateway<T>(
         auth_type: config.authType ?? "none",
         auth_secret: config.authSecret,
         timeout: config.timeout ?? 30,
+        retry_count: 0, // retries handled in Node layer
         authorization: ADMIN_SECRET ? `Bearer ${ADMIN_SECRET}` : undefined,
       }),
       signal: controller.signal,
@@ -91,6 +101,32 @@ async function callGateway<T>(
     }
     throw err;
   }
+}
+
+/**
+ * Call the gateway with bounded retry and exponential backoff.
+ * retryCount = 0 means one attempt total (no retries).
+ */
+async function callGateway<T>(
+  path: "/gateway/test" | "/gateway/discover",
+  config: McpServerConfig
+): Promise<T> {
+  const maxAttempts = Math.max(1, (config.retryCount ?? 0) + 1);
+  let lastError: Error = new Error("No attempts");
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const delayMs = Math.min(1000 * 2 ** (attempt - 1), 10_000);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    try {
+      return await callGatewayOnce<T>(path, config);
+    } catch (err) {
+      lastError = err as Error;
+    }
+  }
+
+  throw lastError;
 }
 
 export async function testMcpConnection(config: McpServerConfig): Promise<McpTestResult> {

@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Sidebar } from "@/components/layout/sidebar";
 import {
   useListMcpServers,
@@ -46,36 +49,42 @@ import {
   getListMcpPromptsQueryKey,
 } from "@workspace/api-client-react";
 
-type AuthType = "none" | "bearer" | "api-key";
-type TransportType = "stdio" | "streamable-http";
+// ─── Zod schema for Add / Edit form ────────────────────────────────────────
 
-interface ServerForm {
-  name: string;
-  description: string;
-  transportType: TransportType;
-  endpoint: string;
-  command: string;
-  args: string;
-  authType: AuthType;
-  authSecret: string;
-  timeout: number;
-  retryCount: number;
-  enabled: boolean;
-}
+const serverFormSchema = z
+  .object({
+    name: z.string().min(1, "Name is required").max(100),
+    description: z.string().max(500).optional(),
+    transportType: z.enum(["streamable-http", "stdio"]),
+    endpoint: z.string().max(2048).optional(),
+    command: z.string().max(1024).optional(),
+    args: z.string().max(2048).optional(),
+    authType: z.enum(["none", "bearer", "api-key"]),
+    authSecret: z.string().max(2048).optional(),
+    timeout: z.coerce.number().min(5, "Min 5s").max(300, "Max 300s"),
+    retryCount: z.coerce.number().min(0, "Min 0").max(10, "Max 10"),
+    enabled: z.boolean(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.transportType === "streamable-http" && !data.endpoint?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Endpoint URL is required for HTTP transport",
+        path: ["endpoint"],
+      });
+    }
+    if (data.transportType === "stdio" && !data.command?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Command is required for stdio transport",
+        path: ["command"],
+      });
+    }
+  });
 
-const DEFAULT_FORM: ServerForm = {
-  name: "",
-  description: "",
-  transportType: "streamable-http",
-  endpoint: "",
-  command: "",
-  args: "",
-  authType: "none",
-  authSecret: "",
-  timeout: 30,
-  retryCount: 3,
-  enabled: true,
-};
+type ServerFormValues = z.infer<typeof serverFormSchema>;
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
 
 function StatusDot({ status }: { status: string }) {
   if (status === "connected") {
@@ -131,6 +140,8 @@ function CollapsibleJson({ schema }: { schema: Record<string, unknown> | null | 
     </div>
   );
 }
+
+// ─── Tool / Resource / Prompt cards ────────────────────────────────────────
 
 function ToolCard({ tool }: { tool: McpTool }) {
   const updateTool = useUpdateMcpTool();
@@ -223,13 +234,9 @@ function PromptCard({ prompt }: { prompt: McpPrompt }) {
   );
 }
 
-function CapabilitiesDrawer({
-  server,
-  onClose,
-}: {
-  server: McpServer;
-  onClose: () => void;
-}) {
+// ─── Capabilities drawer ───────────────────────────────────────────────────
+
+function CapabilitiesDrawer({ server, onClose }: { server: McpServer; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<"tools" | "resources" | "prompts">("tools");
   const { data: tools, isLoading: toolsLoading } = useListMcpTools(server.id);
   const { data: resources, isLoading: resourcesLoading } = useListMcpResources(server.id);
@@ -237,7 +244,7 @@ function CapabilitiesDrawer({
   const discoverMutation = useDiscoverMcpTools();
   const queryClient = useQueryClient();
 
-  const handleDiscover = () => {
+  const handleRediscover = () => {
     discoverMutation.mutate(
       { id: server.id },
       {
@@ -268,7 +275,7 @@ function CapabilitiesDrawer({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleDiscover}
+              onClick={handleRediscover}
               disabled={discoverMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors disabled:opacity-50"
             >
@@ -277,7 +284,7 @@ function CapabilitiesDrawer({
               ) : (
                 <Zap className="w-3 h-3" />
               )}
-              {discoverMutation.isPending ? "Discovering..." : "Rediscover"}
+              {discoverMutation.isPending ? "Discovering…" : "Rediscover"}
             </button>
             <button
               onClick={onClose}
@@ -379,6 +386,8 @@ function EmptyTab({
   );
 }
 
+// ─── Input helpers ─────────────────────────────────────────────────────────
+
 function inputCls(extra?: string) {
   return cn(
     "w-full bg-input border border-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors",
@@ -386,24 +395,11 @@ function inputCls(extra?: string) {
   );
 }
 
-interface FormFieldProps {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-  hint?: string;
+function errorCls(extra?: string) {
+  return cn("text-xs text-destructive mt-1", extra);
 }
 
-function FormField({ label, required, children, hint }: FormFieldProps) {
-  return (
-    <div>
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        {label} {required && <span className="text-destructive">*</span>}
-      </label>
-      <div className="mt-1">{children}</div>
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-    </div>
-  );
-}
+// ─── Server Form Dialog (React Hook Form + Zod) ────────────────────────────
 
 function ServerFormDialog({
   server,
@@ -416,49 +412,66 @@ function ServerFormDialog({
   const createMutation = useCreateMcpServer();
   const updateMutation = useUpdateMcpServer();
   const [showSecret, setShowSecret] = useState(false);
-  const [form, setForm] = useState<ServerForm>(
-    server
+  const isEditing = server !== null;
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors, isValid, isDirty },
+  } = useForm<ServerFormValues>({
+    resolver: zodResolver(serverFormSchema),
+    defaultValues: server
       ? {
           name: server.name,
           description: server.description ?? "",
-          transportType: server.transportType as TransportType,
+          transportType: server.transportType as "streamable-http" | "stdio",
           endpoint: server.endpoint ?? "",
           command: server.command ?? "",
           args: (server.args ?? []).join(" "),
-          authType: (server.authType as AuthType) ?? "none",
+          authType: (server.authType as "none" | "bearer" | "api-key") ?? "none",
           authSecret: "",
           timeout: server.timeout ?? 30,
           retryCount: server.retryCount ?? 3,
           enabled: server.enabled,
         }
-      : DEFAULT_FORM
-  );
+      : {
+          name: "",
+          description: "",
+          transportType: "streamable-http",
+          endpoint: "",
+          command: "",
+          args: "",
+          authType: "none",
+          authSecret: "",
+          timeout: 30,
+          retryCount: 3,
+          enabled: true,
+        },
+  });
 
-  const isEditing = server !== null;
+  const transportType = watch("transportType");
+  const authType = watch("authType");
+  const enabled = watch("enabled");
+
   const isPending = createMutation.isPending || updateMutation.isPending;
   const isError = createMutation.isError || updateMutation.isError;
 
-  const canSubmit =
-    form.name.trim() &&
-    (form.transportType === "streamable-http" ? form.endpoint.trim() : form.command.trim()) &&
-    !isPending;
-
-  const buildPayload = () => ({
-    name: form.name.trim(),
-    description: form.description.trim() || undefined,
-    transportType: form.transportType,
-    endpoint: form.transportType === "streamable-http" ? form.endpoint.trim() : undefined,
-    command: form.transportType === "stdio" ? form.command.trim() : undefined,
-    args: form.args.trim() ? form.args.trim().split(/\s+/) : [],
-    authType: form.authType,
-    authSecret: form.authSecret.trim() || undefined,
-    timeout: form.timeout,
-    retryCount: form.retryCount,
-    enabled: form.enabled,
-  });
-
-  const handleSubmit = () => {
-    const payload = buildPayload();
+  const onSubmit = (values: ServerFormValues) => {
+    const payload = {
+      name: values.name.trim(),
+      description: values.description?.trim() || undefined,
+      transportType: values.transportType,
+      endpoint: values.transportType === "streamable-http" ? values.endpoint?.trim() : undefined,
+      command: values.transportType === "stdio" ? values.command?.trim() : undefined,
+      args: values.args?.trim() ? values.args.trim().split(/\s+/) : [],
+      authType: values.authType,
+      authSecret: values.authSecret?.trim() || undefined,
+      timeout: values.timeout,
+      retryCount: values.retryCount,
+      enabled: values.enabled,
+    };
 
     if (isEditing) {
       updateMutation.mutate(
@@ -483,18 +496,15 @@ function ServerFormDialog({
     }
   };
 
-  const up = <K extends keyof ServerForm>(key: K) =>
-    (value: ServerForm[K]) =>
-      setForm((f) => ({ ...f, [key]: value }));
-
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="glass-panel rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar border border-white/10">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-bold text-white">
             {isEditing ? "Edit Server" : "Add MCP Server"}
           </h2>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
           >
@@ -502,36 +512,48 @@ function ServerFormDialog({
           </button>
         </div>
 
-        <div className="space-y-4">
-          <FormField label="Name" required>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Name */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Name <span className="text-destructive">*</span>
+            </label>
             <input
+              {...register("name")}
               type="text"
-              value={form.name}
-              onChange={(e) => up("name")(e.target.value)}
               placeholder="My MCP Server"
-              className={inputCls()}
+              className={cn(inputCls("mt-1"), errors.name && "border-destructive")}
             />
-          </FormField>
+            {errors.name && <p className={errorCls()}>{errors.name.message}</p>}
+          </div>
 
-          <FormField label="Description">
+          {/* Description */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Description
+            </label>
             <input
+              {...register("description")}
               type="text"
-              value={form.description}
-              onChange={(e) => up("description")(e.target.value)}
               placeholder="Optional description"
-              className={inputCls()}
+              className={inputCls("mt-1")}
             />
-          </FormField>
+          </div>
 
-          <FormField label="Transport">
-            <div className="grid grid-cols-2 gap-2">
+          {/* Transport */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Transport
+            </label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
               {(["streamable-http", "stdio"] as const).map((t) => (
                 <button
                   key={t}
-                  onClick={() => up("transportType")(t)}
+                  type="button"
+                  onClick={() => setValue("transportType", t, { shouldValidate: true })}
                   className={cn(
                     "py-2.5 px-3 rounded-xl text-sm font-medium transition-colors border",
-                    form.transportType === t
+                    transportType === t
                       ? "bg-primary/20 border-primary text-primary"
                       : "bg-secondary border-border text-muted-foreground hover:text-white"
                   )}
@@ -540,88 +562,106 @@ function ServerFormDialog({
                 </button>
               ))}
             </div>
-          </FormField>
+          </div>
 
-          {form.transportType === "streamable-http" ? (
-            <FormField label="Endpoint URL" required>
+          {/* Endpoint or Command */}
+          {transportType === "streamable-http" ? (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Endpoint URL <span className="text-destructive">*</span>
+              </label>
               <input
+                {...register("endpoint")}
                 type="url"
-                value={form.endpoint}
-                onChange={(e) => up("endpoint")(e.target.value)}
                 placeholder="https://my-mcp-server.example.com/mcp"
-                className={inputCls()}
+                className={cn(inputCls("mt-1"), errors.endpoint && "border-destructive")}
               />
-            </FormField>
+              {errors.endpoint && <p className={errorCls()}>{errors.endpoint.message}</p>}
+            </div>
           ) : (
             <>
-              <FormField label="Command" required hint="Full shell command to launch the MCP server process">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Command <span className="text-destructive">*</span>
+                </label>
                 <input
+                  {...register("command")}
                   type="text"
-                  value={form.command}
-                  onChange={(e) => up("command")(e.target.value)}
                   placeholder="npx @modelcontextprotocol/server-filesystem"
-                  className={inputCls("font-mono")}
+                  className={cn(inputCls("mt-1 font-mono"), errors.command && "border-destructive")}
                 />
-              </FormField>
-              <FormField label="Additional Args" hint="Space-separated extra arguments appended to the command">
+                {errors.command && <p className={errorCls()}>{errors.command.message}</p>}
+                <p className="text-xs text-muted-foreground mt-1">Full shell command to launch the MCP server</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Additional Args
+                </label>
                 <input
+                  {...register("args")}
                   type="text"
-                  value={form.args}
-                  onChange={(e) => up("args")(e.target.value)}
                   placeholder="/path/to/files --flag"
-                  className={inputCls("font-mono")}
+                  className={inputCls("mt-1 font-mono")}
                 />
-              </FormField>
+                <p className="text-xs text-muted-foreground mt-1">Space-separated extra arguments</p>
+              </div>
             </>
           )}
 
+          {/* Auth Type + Timeout + Retries */}
           <div className="grid grid-cols-3 gap-3">
-            <FormField label="Auth Type">
-              <select
-                value={form.authType}
-                onChange={(e) => up("authType")(e.target.value as AuthType)}
-                className={inputCls()}
-              >
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Auth
+              </label>
+              <select {...register("authType")} className={inputCls("mt-1")}>
                 <option value="none">None</option>
                 <option value="bearer">Bearer Token</option>
                 <option value="api-key">API Key</option>
               </select>
-            </FormField>
-
-            <FormField label="Timeout (s)">
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Timeout (s)
+              </label>
               <input
+                {...register("timeout")}
                 type="number"
                 min={5}
                 max={300}
-                value={form.timeout}
-                onChange={(e) => up("timeout")(parseInt(e.target.value) || 30)}
-                className={inputCls()}
+                className={cn(inputCls("mt-1"), errors.timeout && "border-destructive")}
               />
-            </FormField>
-
-            <FormField label="Max Retries">
+              {errors.timeout && <p className={errorCls()}>{errors.timeout.message}</p>}
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Retries
+              </label>
               <input
+                {...register("retryCount")}
                 type="number"
                 min={0}
                 max={10}
-                value={form.retryCount}
-                onChange={(e) => up("retryCount")(parseInt(e.target.value) || 0)}
-                className={inputCls()}
+                className={cn(inputCls("mt-1"), errors.retryCount && "border-destructive")}
               />
-            </FormField>
+              {errors.retryCount && <p className={errorCls()}>{errors.retryCount.message}</p>}
+            </div>
           </div>
 
-          {form.authType !== "none" && (
-            <FormField
-              label={form.authType === "bearer" ? "Bearer Token" : "API Key"}
-              hint={isEditing ? "Leave blank to keep existing secret" : undefined}
-            >
-              <div className="relative">
+          {/* Auth Secret */}
+          {authType !== "none" && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {authType === "bearer" ? "Bearer Token" : "API Key"}
+              </label>
+              {isEditing && (
+                <p className="text-xs text-muted-foreground mb-1">Leave blank to keep existing secret</p>
+              )}
+              <div className="relative mt-1">
                 <input
+                  {...register("authSecret")}
                   type={showSecret ? "text" : "password"}
-                  value={form.authSecret}
-                  onChange={(e) => up("authSecret")(e.target.value)}
-                  placeholder={form.authType === "bearer" ? "your-bearer-token" : "your-api-key"}
+                  placeholder={authType === "bearer" ? "your-bearer-token" : "your-api-key"}
                   className={inputCls("pr-10")}
                 />
                 <button
@@ -632,65 +672,70 @@ function ServerFormDialog({
                   {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-            </FormField>
+            </div>
           )}
 
+          {/* Enabled toggle */}
           <div className="flex items-center justify-between py-2 px-3 bg-secondary/30 rounded-xl border border-white/5">
             <div>
               <p className="text-sm font-medium text-white">Enabled</p>
               <p className="text-xs text-muted-foreground">Allow agent to use this server</p>
             </div>
             <button
-              onClick={() => up("enabled")(!form.enabled)}
+              type="button"
+              onClick={() => setValue("enabled", !enabled, { shouldValidate: true })}
               className={cn(
                 "relative w-11 h-6 rounded-full transition-colors",
-                form.enabled ? "bg-primary" : "bg-secondary"
+                enabled ? "bg-primary" : "bg-secondary"
               )}
             >
               <span
                 className={cn(
                   "absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform",
-                  form.enabled ? "translate-x-6" : "translate-x-1"
+                  enabled ? "translate-x-6" : "translate-x-1"
                 )}
               />
             </button>
           </div>
-        </div>
 
-        {isError && (
-          <p className="text-sm text-destructive mt-3">
-            Failed to {isEditing ? "update" : "add"} server. Please check the details and try again.
-          </p>
-        )}
+          {isError && (
+            <p className="text-sm text-destructive">
+              Failed to {isEditing ? "update" : "add"} server. Please check the details and try again.
+            </p>
+          )}
 
-        <div className="flex justify-end gap-3 mt-5">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:bg-white/5 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="px-5 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-all glow-effect disabled:opacity-50"
-          >
-            {isPending ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {isEditing ? "Saving..." : "Adding..."}
-              </span>
-            ) : isEditing ? (
-              "Save Changes"
-            ) : (
-              "Add Server"
-            )}
-          </button>
-        </div>
+          <div className="flex justify-end gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:bg-white/5 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isPending}
+              className="px-5 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-all glow-effect disabled:opacity-50"
+            >
+              {isPending ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {isEditing ? "Saving…" : "Adding…"}
+                </span>
+              ) : isEditing ? (
+                "Save Changes"
+              ) : (
+                "Add Server"
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
+
+// ─── Server card ───────────────────────────────────────────────────────────
 
 function ServerCard({
   server,
@@ -839,24 +884,16 @@ function ServerCard({
           disabled={testMutation.isPending}
           className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-secondary hover:bg-secondary/80 text-white rounded-xl transition-colors disabled:opacity-50"
         >
-          {testMutation.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <RefreshCcw className="w-3.5 h-3.5" />
-          )}
-          {testMutation.isPending ? "Testing..." : "Test"}
+          {testMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+          {testMutation.isPending ? "Testing…" : "Test"}
         </button>
         <button
           onClick={handleDiscover}
           disabled={discoverMutation.isPending}
           className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-primary/20 hover:bg-primary/30 text-primary rounded-xl transition-colors disabled:opacity-50"
         >
-          {discoverMutation.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Zap className="w-3.5 h-3.5" />
-          )}
-          {discoverMutation.isPending ? "Discovering..." : "Discover"}
+          {discoverMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          {discoverMutation.isPending ? "Discovering…" : "Discover"}
         </button>
         <button
           onClick={onOpenCapabilities}
@@ -869,6 +906,8 @@ function ServerCard({
     </div>
   );
 }
+
+// ─── Page ──────────────────────────────────────────────────────────────────
 
 export default function McpServersPage() {
   const { data: servers, isLoading } = useListMcpServers();
@@ -891,11 +930,6 @@ export default function McpServersPage() {
     );
   };
 
-  const handleEdit = (server: McpServer) => {
-    setEditingServer(server);
-    setShowFormDialog(true);
-  };
-
   const handleCloseForm = () => {
     setShowFormDialog(false);
     setEditingServer(null);
@@ -914,7 +948,10 @@ export default function McpServersPage() {
               </p>
             </div>
             <button
-              onClick={() => { setEditingServer(null); setShowFormDialog(true); }}
+              onClick={() => {
+                setEditingServer(null);
+                setShowFormDialog(true);
+              }}
               className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl font-medium shadow-lg glow-effect transition-transform hover:-translate-y-0.5"
             >
               <Plus className="w-4 h-4" /> Add Server
@@ -946,7 +983,10 @@ export default function McpServersPage() {
                   key={server.id}
                   server={server}
                   onOpenCapabilities={() => setCapabilitiesServer(server)}
-                  onEdit={() => handleEdit(server)}
+                  onEdit={() => {
+                    setEditingServer(server);
+                    setShowFormDialog(true);
+                  }}
                   onDelete={() => handleDelete(server)}
                 />
               ))}
@@ -956,10 +996,7 @@ export default function McpServersPage() {
       </main>
 
       {showFormDialog && (
-        <ServerFormDialog
-          server={editingServer}
-          onClose={handleCloseForm}
-        />
+        <ServerFormDialog server={editingServer} onClose={handleCloseForm} />
       )}
 
       {capabilitiesServer && (

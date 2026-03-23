@@ -239,15 +239,25 @@ router.post("/mcp-servers/:id/test", async (req, res) => {
       .set({ status: "checking", lastCheckedAt: new Date() })
       .where(eq(mcpServers.id, id));
 
-    const result = await testMcpConnection({
-      transportType: server.transportType,
-      endpoint: server.endpoint,
-      command: server.command,
-      args: (server.args as string[] | null) ?? [],
-      authType: server.authType,
-      authSecret: unmaskSecret(server.encryptedSecret),
-      timeout: server.timeout ?? 30,
-    });
+    let result;
+    try {
+      result = await testMcpConnection({
+        transportType: server.transportType,
+        endpoint: server.endpoint,
+        command: server.command,
+        args: (server.args as string[] | null) ?? [],
+        authType: server.authType,
+        authSecret: unmaskSecret(server.encryptedSecret),
+        timeout: server.timeout ?? 30,
+        retryCount: server.retryCount ?? 0,
+      });
+    } catch (gatewayErr) {
+      await db
+        .update(mcpServers)
+        .set({ status: "error", lastCheckedAt: new Date() })
+        .where(eq(mcpServers.id, id));
+      throw gatewayErr;
+    }
 
     await db
       .update(mcpServers)
@@ -302,6 +312,7 @@ router.post("/mcp-servers/:id/discover", async (req, res) => {
         authType: server.authType,
         authSecret: unmaskSecret(server.encryptedSecret),
         timeout: server.timeout ?? 30,
+        retryCount: server.retryCount ?? 0,
       });
     } catch (discoveryErr) {
       await db
