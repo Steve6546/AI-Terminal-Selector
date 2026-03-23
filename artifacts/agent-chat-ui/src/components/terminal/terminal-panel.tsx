@@ -75,7 +75,9 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     // Fetch one-time auth token then connect WebSocket
     let token: string | null = null;
     try {
-      const resp = await fetch("/api/terminal/token");
+      const resp = await fetch("/api/terminal/token", {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
       const data = await resp.json() as { token: string };
       token = data.token;
     } catch {

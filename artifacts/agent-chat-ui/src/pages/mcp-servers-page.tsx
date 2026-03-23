@@ -152,7 +152,8 @@ function ToolRunDialog({ tool, onClose }: { tool: McpTool; onClose: () => void }
       : "{}"
   );
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; content?: unknown; error?: string } | null>(null);
+  type RunResult = { success: boolean; output?: unknown; error?: string; durationMs?: number | null };
+  const [result, setResult] = useState<RunResult | null>(null);
 
   const handleRun = async () => {
     setRunning(true);
@@ -162,11 +163,28 @@ function ToolRunDialog({ tool, onClose }: { tool: McpTool; onClose: () => void }
       try { args = JSON.parse(argsJson) as Record<string, unknown>; } catch { /* bad json */ }
       const resp = await fetch(`/api/mcp-tools/${tool.id}/execute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
         body: JSON.stringify({ arguments: args }),
       });
-      const data = await resp.json() as { success: boolean; content?: unknown; error?: string };
-      setResult(data);
+      if (!resp.ok) {
+        const err = await resp.json() as { error?: string };
+        setResult({ success: false, error: err.error ?? `HTTP ${resp.status}` });
+        return;
+      }
+      const data = await resp.json() as {
+        status: string;
+        rawResult?: unknown;
+        errorMessage?: string;
+        resultSummary?: string;
+        durationMs?: number | null;
+      };
+      const succeeded = data.status === "success";
+      setResult({
+        success: succeeded,
+        output: data.rawResult ?? data.resultSummary,
+        error: data.errorMessage ?? undefined,
+        durationMs: data.durationMs,
+      });
     } catch (e) {
       setResult({ success: false, error: String(e) });
     } finally {
@@ -216,9 +234,14 @@ function ToolRunDialog({ tool, onClose }: { tool: McpTool; onClose: () => void }
                 ? "bg-green-500/10 border-green-500/20 text-green-300"
                 : "bg-red-500/10 border-red-500/20 text-red-300"
             )}>
-              <p className="font-semibold mb-1">{result.success ? "Success" : "Error"}</p>
-              <pre className="whitespace-pre-wrap break-all text-[11px]">
-                {result.error ?? JSON.stringify(result.content, null, 2)}
+              <div className="flex items-center justify-between mb-1">
+                <p className="font-semibold">{result.success ? "Success" : "Error"}</p>
+                {result.durationMs != null && (
+                  <span className="text-[10px] opacity-60">{result.durationMs}ms</span>
+                )}
+              </div>
+              <pre className="whitespace-pre-wrap break-all text-[11px] max-h-48 overflow-y-auto">
+                {result.error ?? (typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2))}
               </pre>
             </div>
           )}

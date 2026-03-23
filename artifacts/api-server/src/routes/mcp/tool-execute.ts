@@ -10,6 +10,7 @@ import { mcpTools, mcpServers, executions } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { executeMcpTool } from "../../lib/mcp-gateway";
 import { handleRouteError } from "../../lib/handle-error";
+import { unmaskSecret } from "../../lib/secret-utils";
 
 const router: IRouter = Router();
 
@@ -66,6 +67,7 @@ router.post("/mcp-tools/:toolId/execute", async (req, res) => {
         command: server.command,
         args: (server.args as string[]) ?? [],
         authType: server.authType,
+        authSecret: unmaskSecret(server.encryptedSecret),
         timeout: server.timeout,
         retryCount: server.retryCount,
       },

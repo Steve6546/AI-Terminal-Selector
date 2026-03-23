@@ -10,6 +10,7 @@ import {
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { executeMcpTool } from "../../lib/mcp-gateway";
 import { handleRouteError } from "../../lib/handle-error";
+import { unmaskSecret } from "../../lib/secret-utils";
 
 const router: IRouter = Router();
 
@@ -528,6 +529,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
                 command: servConfig.command,
                 args: (servConfig.args as string[]) ?? [],
                 authType: servConfig.authType,
+                authSecret: unmaskSecret(servConfig.encryptedSecret),
                 timeout: servConfig.timeout,
                 retryCount: servConfig.retryCount,
               },
