@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { 
   MessageSquare, Plus, Search, MoreHorizontal, 
   Settings, Server, Terminal, Trash2, Edit2, Check, X,
-  Pin, PinOff, Copy, Download, Wand2
+  Pin, PinOff, Copy, Download, Wand2, Circle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -17,6 +17,7 @@ import {
   useDuplicateAnthropicConversation,
   useAutoNameAnthropicConversation,
   getExportAnthropicConversationUrl,
+  useListMcpServers,
 } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ export function Sidebar() {
   const queryClient = useQueryClient();
   
   const { data: conversations, isLoading } = useListAnthropicConversations();
+  const { data: mcpServers } = useListMcpServers({ query: { refetchInterval: 60_000, queryKey: ["mcp-servers-sidebar"] } });
   const createMutation = useCreateAnthropicConversation();
   const deleteMutation = useDeleteAnthropicConversation();
   const updateMutation = useUpdateAnthropicConversation();
@@ -361,29 +363,64 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Footer Navigation */}
-      <div className="p-3 border-t border-sidebar-border bg-sidebar/50 space-y-1">
-        <Link href="/servers" className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-          location === "/servers" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
-        )}>
-          <Server className="w-4 h-4" />
-          <span>MCP Servers</span>
-        </Link>
-        <Link href="/terminal" className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-          location === "/terminal" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
-        )}>
-          <Terminal className="w-4 h-4" />
-          <span>Terminal</span>
-        </Link>
-        <Link href="/settings" className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-          location === "/settings" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
-        )}>
-          <Settings className="w-4 h-4" />
-          <span>Settings</span>
-        </Link>
+      {/* Footer: MCP server status + navigation */}
+      <div className="border-t border-sidebar-border bg-sidebar/50">
+        {/* Per-server status — always visible */}
+        {mcpServers && mcpServers.length > 0 && (
+          <div className="px-4 py-2 space-y-1">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+              MCP Servers
+            </div>
+            {mcpServers.map((srv) => {
+              const isConnected = srv.status === "connected";
+              const isChecking = srv.status === "checking";
+              return (
+                <div key={srv.id} className="flex items-center gap-2 text-xs">
+                  <Circle className={cn(
+                    "w-2 h-2 flex-shrink-0 fill-current",
+                    isConnected ? "text-green-500" : isChecking ? "text-yellow-500" : "text-red-500"
+                  )} />
+                  <span className={cn(
+                    "truncate",
+                    isConnected ? "text-muted-foreground" : isChecking ? "text-yellow-400/70" : "text-red-400/70"
+                  )}>
+                    {srv.name}
+                  </span>
+                  <span className={cn(
+                    "ml-auto text-[10px] shrink-0",
+                    isConnected ? "text-green-500/70" : isChecking ? "text-yellow-500/70" : "text-red-500/70"
+                  )}>
+                    {isConnected ? "ok" : isChecking ? "…" : "err"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Navigation links */}
+        <div className="p-3 space-y-1">
+          <Link href="/servers" className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+            location === "/servers" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
+          )}>
+            <Server className="w-4 h-4" />
+            <span>MCP Servers</span>
+          </Link>
+          <Link href="/terminal" className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+            location === "/terminal" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
+          )}>
+            <Terminal className="w-4 h-4" />
+            <span>Terminal</span>
+          </Link>
+          <Link href="/settings" className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+            location === "/settings" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
+          )}>
+            <Settings className="w-4 h-4" />
+            <span>Settings</span>
+          </Link>
+        </div>
       </div>
     </div>
   );

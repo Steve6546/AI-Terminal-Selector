@@ -1,9 +1,15 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Zap, Code, TerminalSquare, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
+import { MessageSquare, Zap, Code, TerminalSquare, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useListAnthropicMessages, useListExecutions, useCreateAnthropicConversation } from "@workspace/api-client-react";
 import type { AnthropicMessage, Execution } from "@workspace/api-client-react";
 import { useLocalSettings } from "@/hooks/use-local-settings";
@@ -33,48 +39,51 @@ function friendlyErrorMessage(err: Error): string {
 }
 
 function ErrorBanner({ error, onDismiss }: { error: Error; onDismiss: () => void }) {
-  const [showDetails, setShowDetails] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      className="mx-6 mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4"
-    >
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-red-300 font-medium">{friendlyErrorMessage(error)}</p>
-          <div className="mt-2 flex items-center gap-3">
-            <button
-              onClick={() => setShowDetails(p => !p)}
-              className="flex items-center gap-1 text-xs text-red-400/70 hover:text-red-300 transition-colors"
-            >
-              {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              {showDetails ? "Hide technical details" : "View technical details"}
-            </button>
-            <button
-              onClick={onDismiss}
-              className="text-xs text-muted-foreground hover:text-white transition-colors"
-            >
-              Dismiss
-            </button>
-          </div>
-          <AnimatePresence>
-            {showDetails && (
-              <motion.pre
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="mt-3 text-xs font-mono text-red-300/70 bg-black/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all"
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+        className="mx-6 mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4"
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-red-300 font-medium">{friendlyErrorMessage(error)}</p>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="text-xs text-red-400/70 hover:text-red-300 transition-colors underline underline-offset-2"
               >
-                {error.stack ?? error.message}
-              </motion.pre>
-            )}
-          </AnimatePresence>
+                View technical details
+              </button>
+              <button
+                onClick={onDismiss}
+                className="text-xs text-muted-foreground hover:text-white transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </motion.div>
+      </motion.div>
+
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetContent side="bottom" className="h-[50vh] bg-card border-border flex flex-col">
+          <SheetHeader className="shrink-0">
+            <SheetTitle className="text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Technical Details
+            </SheetTitle>
+          </SheetHeader>
+          <pre className="flex-1 overflow-auto text-xs font-mono text-red-300/80 bg-black/30 rounded-lg p-4 mt-4 whitespace-pre-wrap break-all">
+            {error.stack ?? error.message}
+          </pre>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

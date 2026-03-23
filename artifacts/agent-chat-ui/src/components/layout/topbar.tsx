@@ -72,10 +72,16 @@ export function TopBar({ model, onModelChange, onTerminalToggle }: TopBarProps) 
           <span className="text-white">{status?.totalTools || 0}</span> Tools Ready
         </div>
 
-        {status?.agentState === "busy" && (
+        {/* Agent state — always visible (idle or busy) */}
+        {status?.agentState === "busy" ? (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/20 border border-primary/30 text-xs font-medium text-primary animate-pulse">
-            <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-            Agent Active
+            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-ping" />
+            Agent Busy
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-white/5 text-xs font-medium text-muted-foreground hidden sm:flex">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+            Agent Idle
           </div>
         )}
       </div>
