@@ -390,6 +390,13 @@ function inputCls(extra?: string) {
   );
 }
 
+function numberInputCls(extra?: string) {
+  return cn(
+    inputCls(extra),
+    "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+  );
+}
+
 function errorCls(extra?: string) {
   return cn("text-xs text-destructive mt-1", extra);
 }
@@ -455,10 +462,10 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
   };
 
   const authOptions = [
-    { value: "none" as const, label: "No Auth", icon: Globe, description: "Public endpoint" },
-    { value: "bearer" as const, label: "Bearer Token", icon: Key, description: "Authorization header" },
-    { value: "api-key" as const, label: "API Key", icon: Lock, description: "Custom key" },
-    { value: "oauth" as const, label: "OAuth", icon: Zap, description: "Authorize next step" },
+    { value: "none" as const, label: "No Auth", icon: Globe, description: "Open or internally trusted endpoint" },
+    { value: "bearer" as const, label: "Bearer Token", icon: Key, description: "RFC 6750 — Authorization: Bearer" },
+    { value: "api-key" as const, label: "API Key", icon: Lock, description: "Custom header or query parameter" },
+    { value: "oauth" as const, label: "OAuth 2.0", icon: Zap, description: "MCP-compliant OAuth flow" },
   ];
 
   return (
@@ -494,21 +501,25 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Connection Type</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Transport</label>
             <div className="grid grid-cols-2 gap-2 mt-1">
-              {(["streamable-http", "stdio"] as const).map((t) => (
+              {([
+                { value: "streamable-http" as const, label: "HTTP (Remote)", sub: "Streamable HTTP · MCP spec" },
+                { value: "stdio" as const, label: "stdio (Local)", sub: "Process · stdin/stdout" },
+              ]).map((t) => (
                 <button
-                  key={t}
+                  key={t.value}
                   type="button"
-                  onClick={() => setValue("transportType", t, { shouldValidate: true })}
+                  onClick={() => setValue("transportType", t.value, { shouldValidate: true })}
                   className={cn(
-                    "py-2.5 px-3 rounded-xl text-sm font-medium transition-colors border",
-                    transportType === t
-                      ? "bg-primary/20 border-primary text-primary"
-                      : "bg-secondary border-border text-muted-foreground hover:text-white"
+                    "py-2.5 px-3 rounded-xl text-left transition-colors border",
+                    transportType === t.value
+                      ? "bg-primary/20 border-primary"
+                      : "bg-secondary border-border hover:border-white/20"
                   )}
                 >
-                  {t === "streamable-http" ? "HTTP (Remote)" : "stdio (Local)"}
+                  <p className={cn("text-sm font-medium leading-tight", transportType === t.value ? "text-primary" : "text-white")}>{t.label}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{t.sub}</p>
                 </button>
               ))}
             </div>
@@ -517,14 +528,16 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
           {transportType === "streamable-http" ? (
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                URL <span className="text-destructive">*</span>
+                Endpoint URL <span className="text-destructive">*</span>
               </label>
               <input
                 {...register("endpoint")}
                 type="url"
-                className={cn(inputCls("mt-1"), errors.endpoint && "border-destructive")}
+                autoComplete="off"
+                className={cn(inputCls("mt-1 font-mono"), errors.endpoint && "border-destructive")}
               />
               {errors.endpoint && <p className={errorCls()}>{errors.endpoint.message}</p>}
+              <p className="text-xs text-muted-foreground mt-1">The MCP server's HTTP endpoint (e.g. <span className="font-mono">/mcp</span> path)</p>
             </div>
           ) : (
             <>
@@ -535,13 +548,16 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
                 <input
                   {...register("command")}
                   type="text"
+                  autoComplete="off"
                   className={cn(inputCls("mt-1 font-mono"), errors.command && "border-destructive")}
                 />
                 {errors.command && <p className={errorCls()}>{errors.command.message}</p>}
+                <p className="text-xs text-muted-foreground mt-1">Executable or <span className="font-mono">npx</span> package — launched as a child process via stdio</p>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Additional Args</label>
-                <input {...register("args")} type="text" className={inputCls("mt-1 font-mono")} />
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Arguments</label>
+                <input {...register("args")} type="text" autoComplete="off" className={inputCls("mt-1 font-mono")} />
+                <p className="text-xs text-muted-foreground mt-1">Space-separated arguments passed after the command</p>
               </div>
             </>
           )}
@@ -571,6 +587,13 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
             </div>
           </div>
 
+          {authType === "oauth" && (
+            <div className="flex items-start gap-2.5 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300">
+              <Zap className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <p>OAuth 2.0 with PKCE — after saving, the agent will initiate the authorization code flow with the server's <span className="font-mono">/authorize</span> endpoint.</p>
+            </div>
+          )}
+
           {(authType === "bearer" || authType === "api-key") && (
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -598,12 +621,12 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Timeout (s)</label>
-              <input {...register("timeout")} type="number" min={5} max={300} className={cn(inputCls("mt-1"), errors.timeout && "border-destructive")} />
+              <input {...register("timeout")} type="number" min={5} max={300} autoComplete="off" className={cn(numberInputCls("mt-1"), errors.timeout && "border-destructive")} />
               {errors.timeout && <p className={errorCls()}>{errors.timeout.message}</p>}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Retries</label>
-              <input {...register("retryCount")} type="number" min={0} max={10} className={cn(inputCls("mt-1"), errors.retryCount && "border-destructive")} />
+              <input {...register("retryCount")} type="number" min={0} max={10} autoComplete="off" className={cn(numberInputCls("mt-1"), errors.retryCount && "border-destructive")} />
               {errors.retryCount && <p className={errorCls()}>{errors.retryCount.message}</p>}
             </div>
           </div>
@@ -616,9 +639,14 @@ function EditServerDialog({ server, onClose }: { server: McpServer; onClose: () 
             <button
               type="button"
               onClick={() => setValue("enabled", !enabled, { shouldValidate: true })}
-              className={cn("relative w-11 h-6 rounded-full transition-colors", enabled ? "bg-primary" : "bg-secondary")}
+              aria-checked={enabled}
+              role="switch"
+              className={cn(
+                "relative w-11 h-6 rounded-full transition-colors overflow-hidden flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                enabled ? "bg-primary" : "bg-secondary"
+              )}
             >
-              <span className={cn("absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform", enabled ? "translate-x-6" : "translate-x-1")} />
+              <span className={cn("absolute top-1 left-0 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200", enabled ? "translate-x-6" : "translate-x-1")} />
             </button>
           </div>
 

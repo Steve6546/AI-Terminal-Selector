@@ -62,7 +62,7 @@ function buildServerBody(config: McpServerConfig) {
     auth_type: config.authType ?? "none",
     auth_secret: config.authSecret,
     timeout: config.timeout ?? 30,
-    retry_count: 0,
+    retry_count: config.retryCount ?? 0,
   };
 }
 
