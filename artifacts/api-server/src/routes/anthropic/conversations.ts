@@ -361,8 +361,16 @@ router.post("/conversations/:id/messages", async (req, res) => {
         input_schema,
       }));
 
+      // Properly typed Anthropic content blocks for tool use / tool result turns.
+      // ContentPart is kept intentionally broad to cover both initial DB messages
+      // (which may carry arbitrary typed blocks) and the structured blocks we push below.
+      // The push() calls use explicit return-type annotations to catch shape errors at the callsite.
+      type ToolUseBlock = { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+      type ToolResultBlock = { type: "tool_result"; tool_use_id: string; content: string };
+      type ContentPart = string | { type: string; [k: string]: unknown };
+      type LoopMsg = { role: "user" | "assistant"; content: ContentPart | ContentPart[] };
+
       // Agentic loop: keep calling Claude until no more tool_use blocks
-      type LoopMsg = { role: "user" | "assistant"; content: unknown };
       let loopMessages: LoopMsg[] = [...chatMessages];
       let loopCount = 0;
       const MAX_LOOPS = 10;
@@ -622,20 +630,24 @@ router.post("/conversations/:id/messages", async (req, res) => {
           });
         }
 
-        // Add assistant tool_use block and tool results to the message history
+        // Add properly typed assistant tool_use blocks and tool results to the message history
         if (toolUseBlocks.length > 0) {
           loopMessages.push({
             role: "assistant",
-            content: toolUseBlocks.map((b) => ({
-              type: "tool_use" as const,
+            content: toolUseBlocks.map((b): ToolUseBlock => ({
+              type: "tool_use",
               id: b.id,
               name: b.name,
               input: b.input,
-            })) as unknown as string,
+            })),
           });
           loopMessages.push({
             role: "user",
-            content: toolResults as unknown as string,
+            content: toolResults.map((r): ToolResultBlock => ({
+              type: "tool_result",
+              tool_use_id: r.tool_use_id,
+              content: r.content,
+            })),
           });
         }
       }

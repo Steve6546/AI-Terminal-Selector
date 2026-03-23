@@ -24,15 +24,31 @@ interface TokenRecord {
 
 const pendingTokens = new Map<string, TokenRecord>();
 
+function parseOrigin(raw: string): string | null {
+  try { return new URL(raw).origin; } catch { return null; }
+}
+
 function allowedOrigin(origin: string): boolean {
-  // Permit localhost development and Replit preview domains
-  if (!origin) return true; // same-origin has no Origin header
-  if (origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1")) return true;
+  // Permit same-origin (no Origin header)
+  if (!origin) return true;
+
+  const reqOrigin = parseOrigin(origin);
+  if (!reqOrigin) return false;
+
+  // Strict equality checks — no startsWith/prefix matching to prevent origin confusion
+  const allowed: string[] = [];
+
+  // Localhost development (any port)
+  allowed.push(parseOrigin("http://localhost") ?? "");
+  allowed.push(parseOrigin("http://127.0.0.1") ?? "");
+
   const devDomain = process.env["REPLIT_DEV_DOMAIN"];
-  if (devDomain && origin === `https://${devDomain}`) return true;
+  if (devDomain) allowed.push(parseOrigin(`https://${devDomain}`) ?? "");
+
   const appsDomain = process.env["REPLIT_DEPLOYMENT_URL"];
-  if (appsDomain && origin === appsDomain) return true;
-  return false;
+  if (appsDomain) allowed.push(parseOrigin(appsDomain) ?? "");
+
+  return allowed.some((a) => a && a === reqOrigin);
 }
 
 /** Generate a one-time terminal auth token bound to the caller's IP and origin. */
@@ -47,7 +63,8 @@ export function issueTerminalToken(ip: string, origin: string): string {
   return token;
 }
 
-function consumeToken(token: string | null, ip: string): boolean {
+/** Validate and consume a one-time terminal token. Validates IP and origin (parsed equality). */
+function consumeToken(token: string | null, ip: string, wsOrigin: string): boolean {
   if (!token) return false;
   const rec = pendingTokens.get(token);
   if (!rec) return false;
@@ -57,6 +74,12 @@ function consumeToken(token: string | null, ip: string): boolean {
   }
   // IP must match
   if (rec.ip !== ip) return false;
+  // Origin must match (parsed strict equality) — allows empty origin (same-origin WS)
+  if (wsOrigin) {
+    const reqOrigin = parseOrigin(wsOrigin);
+    const recOrigin = parseOrigin(rec.origin) ?? rec.origin;
+    if (reqOrigin !== recOrigin) return false;
+  }
   pendingTokens.delete(token); // one-time use
   return true;
 }
@@ -79,10 +102,10 @@ export function attachTerminalServer(httpServer: Server): void {
       return;
     }
 
-    // Validate one-time token
+    // Validate one-time token (with IP + origin binding)
     const token = url.searchParams.get("token");
     const ip = (req.socket.remoteAddress ?? "").split(",")[0]?.trim() ?? "";
-    if (!consumeToken(token, ip)) {
+    if (!consumeToken(token, ip, wsOrigin)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;

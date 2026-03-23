@@ -40,11 +40,25 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow same-origin (no origin header) and localhost in any port
-      if (!origin || allowedOrigins.some((o) => origin.startsWith(o))) {
+      // Allow same-origin (no origin header)
+      if (!origin) {
         callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin ${origin} not allowed`));
+        return;
+      }
+      // Parse and compare the exact origin (scheme + host + port) to prevent prefix abuse
+      try {
+        const reqOrigin = new URL(origin).origin; // normalizes trailing slashes etc.
+        const match = allowedOrigins.some((allowed) => {
+          // Compare parsed origins for strict equality
+          try { return new URL(allowed).origin === reqOrigin; } catch { return false; }
+        });
+        if (match) {
+          callback(null, true);
+        } else {
+          callback(new Error(`CORS: origin ${origin} not allowed`));
+        }
+      } catch {
+        callback(new Error(`CORS: invalid origin ${origin}`));
       }
     },
     credentials: true,
