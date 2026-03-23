@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 // Pages
 import ChatPage from "./pages/chat-page";
 import McpServersPage from "./pages/mcp-servers-page";
+import McpServerDetailPage from "./pages/mcp-server-detail-page";
 import SettingsPage from "./pages/settings-page";
 import TerminalPage from "./pages/terminal-page";
 import NotFound from "./pages/not-found";
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/" component={ChatPage} />
       <Route path="/c/:id" component={ChatPage} />
       <Route path="/servers" component={McpServersPage} />
+      <Route path="/servers/:id" component={McpServerDetailPage} />
       <Route path="/terminal" component={TerminalPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />

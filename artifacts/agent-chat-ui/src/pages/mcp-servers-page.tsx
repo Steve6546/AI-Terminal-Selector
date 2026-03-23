@@ -2,51 +2,35 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Sidebar } from "@/components/layout/sidebar";
+import { useLocation } from "wouter";
 import {
   useListMcpServers,
   useCreateMcpServer,
   useUpdateMcpServer,
   useDeleteMcpServer,
-  useTestMcpServerConnection,
-  useDiscoverMcpTools,
-  useListMcpTools,
-  useListMcpResources,
-  useListMcpPrompts,
-  useUpdateMcpTool,
 } from "@workspace/api-client-react";
-import type { McpServer, McpTool, McpResource, McpPrompt } from "@workspace/api-client-react";
+import type { McpServer } from "@workspace/api-client-react";
 import {
   Server,
   Plus,
   Trash2,
   Settings2,
   X,
-  RefreshCcw,
   Zap,
-  ChevronRight,
-  ChevronDown,
   Wrench,
-  Database,
-  MessageSquare,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
   Loader2,
   Eye,
   EyeOff,
-  Shield,
-  ShieldAlert,
-  Code2,
+  ArrowLeft,
+  Key,
+  Lock,
+  Globe,
 } from "lucide-react";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getListMcpServersQueryKey,
-  getListMcpToolsQueryKey,
-  getListMcpResourcesQueryKey,
-  getListMcpPromptsQueryKey,
 } from "@workspace/api-client-react";
 
 // ─── Zod schema for Add / Edit form ────────────────────────────────────────
@@ -59,7 +43,7 @@ const serverFormSchema = z
     endpoint: z.string().max(2048).optional(),
     command: z.string().max(1024).optional(),
     args: z.string().max(2048).optional(),
-    authType: z.enum(["none", "bearer", "api-key"]),
+    authType: z.enum(["none", "bearer", "api-key", "oauth"]),
     authSecret: z.string().max(2048).optional(),
     timeout: z.coerce.number().min(5, "Min 5s").max(300, "Max 300s"),
     retryCount: z.coerce.number().min(0, "Min 0").max(10, "Max 10"),
@@ -119,405 +103,6 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function CollapsibleJson({ schema }: { schema: Record<string, unknown> | null | undefined }) {
-  const [open, setOpen] = useState(false);
-  if (!schema || Object.keys(schema).length === 0) return null;
-  return (
-    <div className="mt-1.5">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-white transition-colors"
-      >
-        <Code2 className="w-3 h-3" />
-        <span>{open ? "Hide" : "View"} schema</span>
-        <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
-      </button>
-      {open && (
-        <pre className="mt-1.5 text-xs bg-black/40 rounded-lg p-2 overflow-x-auto text-muted-foreground border border-white/5 max-h-48">
-          {JSON.stringify(schema, null, 2)}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-// ─── Tool / Resource / Prompt cards ────────────────────────────────────────
-
-function ToolRunDialog({ tool, onClose }: { tool: McpTool; onClose: () => void }) {
-  const schema = tool.inputSchema as Record<string, unknown> | null;
-  const schemaProps = (schema?.properties ?? {}) as Record<string, { type?: string; description?: string }>;
-  const [argsJson, setArgsJson] = useState(
-    Object.keys(schemaProps).length > 0
-      ? JSON.stringify(Object.fromEntries(Object.keys(schemaProps).map((k) => [k, ""])), null, 2)
-      : "{}"
-  );
-  const [running, setRunning] = useState(false);
-  type RunResult = { success: boolean; output?: unknown; error?: string; durationMs?: number | null };
-  const [result, setResult] = useState<RunResult | null>(null);
-
-  const handleRun = async () => {
-    setRunning(true);
-    setResult(null);
-    try {
-      let args: Record<string, unknown> = {};
-      try { args = JSON.parse(argsJson) as Record<string, unknown>; } catch { /* bad json */ }
-      const resp = await fetch(`/api/mcp-tools/${tool.id}/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-        body: JSON.stringify({ arguments: args }),
-      });
-      if (!resp.ok) {
-        const err = await resp.json() as { error?: string };
-        setResult({ success: false, error: err.error ?? `HTTP ${resp.status}` });
-        return;
-      }
-      const data = await resp.json() as {
-        status: string;
-        rawResult?: unknown;
-        errorMessage?: string;
-        resultSummary?: string;
-        durationMs?: number | null;
-      };
-      const succeeded = data.status === "success";
-      setResult({
-        success: succeeded,
-        output: data.rawResult ?? data.resultSummary,
-        error: data.errorMessage ?? undefined,
-        durationMs: data.durationMs,
-      });
-    } catch (e) {
-      setResult({ success: false, error: String(e) });
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="glass-panel rounded-2xl p-6 w-full max-w-lg border border-white/10 max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-white font-mono">{tool.toolName}</h2>
-            {tool.description && <p className="text-xs text-muted-foreground mt-0.5">{tool.description}</p>}
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-white transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Arguments (JSON)</label>
-            <textarea
-              value={argsJson}
-              onChange={(e) => setArgsJson(e.target.value)}
-              rows={8}
-              className="w-full mt-1 bg-background/60 border border-white/10 rounded-xl p-3 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-            />
-            {Object.keys(schemaProps).length > 0 && (
-              <div className="mt-1.5 space-y-0.5">
-                {Object.entries(schemaProps).map(([key, info]) => (
-                  <p key={key} className="text-[10px] text-muted-foreground font-mono">
-                    <span className="text-primary">{key}</span>
-                    {info.type ? ` (${info.type})` : ""}
-                    {info.description ? ` — ${info.description}` : ""}
-                  </p>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {result && (
-            <div className={cn(
-              "rounded-xl p-3 text-xs font-mono border",
-              result.success
-                ? "bg-green-500/10 border-green-500/20 text-green-300"
-                : "bg-red-500/10 border-red-500/20 text-red-300"
-            )}>
-              <div className="flex items-center justify-between mb-1">
-                <p className="font-semibold">{result.success ? "Success" : "Error"}</p>
-                {result.durationMs != null && (
-                  <span className="text-[10px] opacity-60">{result.durationMs}ms</span>
-                )}
-              </div>
-              <pre className="whitespace-pre-wrap break-all text-[11px] max-h-48 overflow-y-auto">
-                {result.error ?? (typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2))}
-              </pre>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleRun}
-              disabled={running}
-              className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              {running ? <><Loader2 className="w-4 h-4 animate-spin" /> Running...</> : <><Zap className="w-4 h-4" /> Execute Tool</>}
-            </button>
-            <button onClick={onClose} className="px-4 py-2.5 bg-secondary text-muted-foreground rounded-xl text-sm hover:text-white transition-colors">
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ToolCard({ tool }: { tool: McpTool }) {
-  const updateTool = useUpdateMcpTool();
-  const queryClient = useQueryClient();
-  const [showRunDialog, setShowRunDialog] = useState(false);
-
-  const toggle = (field: "enabled" | "requiresApproval", current: boolean) => {
-    updateTool.mutate(
-      { toolId: tool.id, data: { [field]: !current } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListMcpToolsQueryKey(tool.serverId) });
-        },
-      }
-    );
-  };
-
-  return (
-    <>
-      {showRunDialog && <ToolRunDialog tool={tool} onClose={() => setShowRunDialog(false)} />}
-      <div className="p-3 rounded-xl bg-secondary/30 border border-white/5 hover:border-white/10 transition-colors">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white font-mono truncate">{tool.toolName}</p>
-            {tool.description && (
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{tool.description}</p>
-            )}
-            <CollapsibleJson schema={tool.inputSchema as Record<string, unknown> | null} />
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => setShowRunDialog(true)}
-              title="Execute this tool directly"
-              className="p-1.5 rounded-lg transition-colors text-muted-foreground hover:bg-primary/20 hover:text-primary"
-            >
-              <Zap className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => toggle("requiresApproval", tool.requiresApproval)}
-              title={tool.requiresApproval ? "Requires approval" : "Auto-execute"}
-              className={cn(
-                "p-1.5 rounded-lg transition-colors",
-                tool.requiresApproval
-                  ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
-                  : "text-muted-foreground hover:bg-white/5"
-              )}
-            >
-              {tool.requiresApproval ? <ShieldAlert className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              onClick={() => toggle("enabled", tool.enabled)}
-              className={cn(
-                "relative w-9 h-5 rounded-full transition-colors",
-                tool.enabled ? "bg-primary" : "bg-secondary"
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
-                  tool.enabled ? "translate-x-4" : "translate-x-0.5"
-                )}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function ResourceCard({ resource }: { resource: McpResource }) {
-  return (
-    <div className="p-3 rounded-xl bg-secondary/30 border border-white/5">
-      <div className="flex items-start gap-2">
-        <Database className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white truncate">{resource.resourceName}</p>
-          {resource.description && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{resource.description}</p>
-          )}
-          <p className="text-xs font-mono text-muted-foreground mt-1">{resource.resourceType}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PromptCard({ prompt }: { prompt: McpPrompt }) {
-  return (
-    <div className="p-3 rounded-xl bg-secondary/30 border border-white/5">
-      <div className="flex items-start gap-2">
-        <MessageSquare className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white font-mono truncate">{prompt.promptName}</p>
-          {prompt.description && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{prompt.description}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Capabilities drawer ───────────────────────────────────────────────────
-
-function CapabilitiesDrawer({ server, onClose }: { server: McpServer; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<"tools" | "resources" | "prompts">("tools");
-  const { data: tools, isLoading: toolsLoading } = useListMcpTools(server.id);
-  const { data: resources, isLoading: resourcesLoading } = useListMcpResources(server.id);
-  const { data: prompts, isLoading: promptsLoading } = useListMcpPrompts(server.id);
-  const discoverMutation = useDiscoverMcpTools();
-  const queryClient = useQueryClient();
-
-  const handleRediscover = () => {
-    discoverMutation.mutate(
-      { id: server.id },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListMcpServersQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getListMcpToolsQueryKey(server.id) });
-          queryClient.invalidateQueries({ queryKey: getListMcpResourcesQueryKey(server.id) });
-          queryClient.invalidateQueries({ queryKey: getListMcpPromptsQueryKey(server.id) });
-        },
-      }
-    );
-  };
-
-  const tabs = [
-    { key: "tools" as const, label: "Tools", icon: Wrench, count: tools?.length ?? 0 },
-    { key: "resources" as const, label: "Resources", icon: Database, count: resources?.length ?? 0 },
-    { key: "prompts" as const, label: "Prompts", icon: MessageSquare, count: prompts?.length ?? 0 },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="w-full max-w-md glass-panel flex flex-col border-l border-white/10 animate-slide-left">
-        <div className="flex items-center justify-between p-4 border-b border-white/5">
-          <div>
-            <h2 className="text-base font-bold text-white">{server.name}</h2>
-            <StatusDot status={server.status} />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRediscover}
-              disabled={discoverMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors disabled:opacity-50"
-            >
-              {discoverMutation.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Zap className="w-3 h-3" />
-              )}
-              {discoverMutation.isPending ? "Discovering…" : "Rediscover"}
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex border-b border-white/5">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors",
-                activeTab === tab.key
-                  ? "text-primary border-b-2 border-primary"
-                  : "text-muted-foreground hover:text-white"
-              )}
-            >
-              <tab.icon className="w-3.5 h-3.5" />
-              {tab.label}
-              <span className="text-xs bg-secondary rounded-full px-1.5">{tab.count}</span>
-            </button>
-          ))}
-        </div>
-
-        {discoverMutation.isError && (
-          <div className="mx-4 mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-xs text-destructive">
-            Discovery failed: {String(discoverMutation.error)}
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-          {activeTab === "tools" && (
-            <div className="space-y-2">
-              {toolsLoading ? (
-                <EmptyLoading />
-              ) : !tools?.length ? (
-                <EmptyTab icon={Wrench} label="No tools discovered" hint="Click Rediscover to fetch tools" />
-              ) : (
-                tools.map((tool) => <ToolCard key={tool.id} tool={tool} />)
-              )}
-            </div>
-          )}
-          {activeTab === "resources" && (
-            <div className="space-y-2">
-              {resourcesLoading ? (
-                <EmptyLoading />
-              ) : !resources?.length ? (
-                <EmptyTab icon={Database} label="No resources discovered" hint="Click Rediscover to fetch resources" />
-              ) : (
-                resources.map((r) => <ResourceCard key={r.id} resource={r} />)
-              )}
-            </div>
-          )}
-          {activeTab === "prompts" && (
-            <div className="space-y-2">
-              {promptsLoading ? (
-                <EmptyLoading />
-              ) : !prompts?.length ? (
-                <EmptyTab icon={MessageSquare} label="No prompts discovered" hint="Click Rediscover to fetch prompts" />
-              ) : (
-                prompts.map((p) => <PromptCard key={p.id} prompt={p} />)
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyLoading() {
-  return (
-    <div className="flex items-center justify-center py-8">
-      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-    </div>
-  );
-}
-
-function EmptyTab({
-  icon: Icon,
-  label,
-  hint,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <div className="text-center py-8 text-muted-foreground text-sm">
-      <Icon className="w-8 h-8 mx-auto mb-2 opacity-30" />
-      <p>{label}</p>
-      <p className="text-xs mt-1">{hint}</p>
-    </div>
-  );
-}
-
 // ─── Input helpers ─────────────────────────────────────────────────────────
 
 function inputCls(extra?: string) {
@@ -551,7 +136,7 @@ function ServerFormDialog({
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isValid, isDirty },
+    formState: { errors },
   } = useForm<ServerFormValues>({
     resolver: zodResolver(serverFormSchema),
     defaultValues: server
@@ -562,7 +147,7 @@ function ServerFormDialog({
           endpoint: server.endpoint ?? "",
           command: server.command ?? "",
           args: (server.args ?? []).join(" "),
-          authType: (server.authType as "none" | "bearer" | "api-key") ?? "none",
+          authType: (server.authType as "none" | "bearer" | "api-key" | "oauth") ?? "none",
           authSecret: "",
           timeout: server.timeout ?? 30,
           retryCount: server.retryCount ?? 3,
@@ -591,6 +176,7 @@ function ServerFormDialog({
   const isError = createMutation.isError || updateMutation.isError;
 
   const onSubmit = (values: ServerFormValues) => {
+    const backendAuthType = values.authType === "oauth" ? "none" : values.authType;
     const payload = {
       name: values.name.trim(),
       description: values.description?.trim() || undefined,
@@ -598,7 +184,7 @@ function ServerFormDialog({
       endpoint: values.transportType === "streamable-http" ? values.endpoint?.trim() : undefined,
       command: values.transportType === "stdio" ? values.command?.trim() : undefined,
       args: values.args?.trim() ? values.args.trim().split(/\s+/) : [],
-      authType: values.authType,
+      authType: backendAuthType,
       authSecret: values.authSecret?.trim() || undefined,
       timeout: values.timeout,
       retryCount: values.retryCount,
@@ -628,6 +214,20 @@ function ServerFormDialog({
     }
   };
 
+  const authOptions = [
+    { value: "none" as const, label: "No Auth", icon: Globe, description: "Public or self-signed endpoint" },
+    { value: "bearer" as const, label: "Bearer Token", icon: Key, description: "Authorization: Bearer <token>" },
+    { value: "api-key" as const, label: "API Key", icon: Lock, description: "Custom header or query param" },
+    { value: "oauth" as const, label: "OAuth", icon: Zap, description: "Authorize in next step" },
+  ];
+
+  const primaryLabel = () => {
+    if (isPending) return isEditing ? "Saving…" : "Adding…";
+    if (isEditing) return "Save Changes";
+    if (authType === "oauth") return "Add & Authorize";
+    return "Save & Continue";
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="glass-panel rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar border border-white/10">
@@ -648,7 +248,7 @@ function ServerFormDialog({
           {/* Name */}
           <div>
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Name <span className="text-destructive">*</span>
+              Server Name <span className="text-destructive">*</span>
             </label>
             <input
               {...register("name")}
@@ -675,7 +275,7 @@ function ServerFormDialog({
           {/* Transport */}
           <div>
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Transport
+              Connection Type
             </label>
             <div className="grid grid-cols-2 gap-2 mt-1">
               {(["streamable-http", "stdio"] as const).map((t) => (
@@ -700,7 +300,7 @@ function ServerFormDialog({
           {transportType === "streamable-http" ? (
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Endpoint URL <span className="text-destructive">*</span>
+                URL <span className="text-destructive">*</span>
               </label>
               <input
                 {...register("endpoint")}
@@ -740,18 +340,77 @@ function ServerFormDialog({
             </>
           )}
 
-          {/* Auth Type + Timeout + Retries */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Authentication */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Authentication
+            </label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              {authOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setValue("authType", opt.value, { shouldValidate: true })}
+                  className={cn(
+                    "flex items-start gap-2 p-3 rounded-xl text-left transition-colors border",
+                    authType === opt.value
+                      ? "bg-primary/20 border-primary"
+                      : "bg-secondary border-border hover:border-white/20"
+                  )}
+                >
+                  <opt.icon className={cn(
+                    "w-3.5 h-3.5 mt-0.5 flex-shrink-0",
+                    authType === opt.value ? "text-primary" : "text-muted-foreground"
+                  )} />
+                  <div>
+                    <p className={cn(
+                      "text-xs font-medium leading-tight",
+                      authType === opt.value ? "text-primary" : "text-white"
+                    )}>{opt.label}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{opt.description}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* OAuth info banner */}
+          {authType === "oauth" && (
+            <div className="flex items-start gap-2.5 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300">
+              <Zap className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <p>After saving, you will be redirected to the server's authorization page to complete the OAuth flow.</p>
+            </div>
+          )}
+
+          {/* Auth Secret for bearer/api-key */}
+          {(authType === "bearer" || authType === "api-key") && (
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Auth
+                {authType === "bearer" ? "Bearer Token" : "API Key"}
               </label>
-              <select {...register("authType")} className={inputCls("mt-1")}>
-                <option value="none">None</option>
-                <option value="bearer">Bearer Token</option>
-                <option value="api-key">API Key</option>
-              </select>
+              {isEditing && (
+                <p className="text-xs text-muted-foreground mb-1">Leave blank to keep existing secret</p>
+              )}
+              <div className="relative mt-1">
+                <input
+                  {...register("authSecret")}
+                  type={showSecret ? "text" : "password"}
+                  placeholder={authType === "bearer" ? "your-bearer-token" : "your-api-key"}
+                  className={inputCls("pr-10")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
+                >
+                  {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
+          )}
+
+          {/* Timeout + Retries */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Timeout (s)
@@ -779,33 +438,6 @@ function ServerFormDialog({
               {errors.retryCount && <p className={errorCls()}>{errors.retryCount.message}</p>}
             </div>
           </div>
-
-          {/* Auth Secret */}
-          {authType !== "none" && (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {authType === "bearer" ? "Bearer Token" : "API Key"}
-              </label>
-              {isEditing && (
-                <p className="text-xs text-muted-foreground mb-1">Leave blank to keep existing secret</p>
-              )}
-              <div className="relative mt-1">
-                <input
-                  {...register("authSecret")}
-                  type={showSecret ? "text" : "password"}
-                  placeholder={authType === "bearer" ? "your-bearer-token" : "your-api-key"}
-                  className={inputCls("pr-10")}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((v) => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
-                >
-                  {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Enabled toggle */}
           <div className="flex items-center justify-between py-2 px-3 bg-secondary/30 rounded-xl border border-white/5">
@@ -847,18 +479,10 @@ function ServerFormDialog({
             <button
               type="submit"
               disabled={isPending}
-              className="px-5 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-all glow-effect disabled:opacity-50"
+              className="px-5 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-all glow-effect disabled:opacity-50 flex items-center gap-2"
             >
-              {isPending ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {isEditing ? "Saving…" : "Adding…"}
-                </span>
-              ) : isEditing ? (
-                "Save Changes"
-              ) : (
-                "Add Server"
-              )}
+              {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              {primaryLabel()}
             </button>
           </div>
         </form>
@@ -871,57 +495,20 @@ function ServerFormDialog({
 
 function ServerCard({
   server,
-  onOpenCapabilities,
   onEdit,
   onDelete,
+  onClick,
 }: {
   server: McpServer;
-  onOpenCapabilities: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void;
+  onClick: () => void;
 }) {
-  const testMutation = useTestMcpServerConnection();
-  const discoverMutation = useDiscoverMcpTools();
-  const queryClient = useQueryClient();
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-    latencyMs: number;
-  } | null>(null);
-
-  const handleTest = () => {
-    setTestResult(null);
-    testMutation.mutate(
-      { id: server.id },
-      {
-        onSuccess: (data) => {
-          setTestResult({
-            success: data.success,
-            message: data.message,
-            latencyMs: data.latencyMs ?? 0,
-          });
-          queryClient.invalidateQueries({ queryKey: getListMcpServersQueryKey() });
-        },
-      }
-    );
-  };
-
-  const handleDiscover = () => {
-    discoverMutation.mutate(
-      { id: server.id },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListMcpServersQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getListMcpToolsQueryKey(server.id) });
-          queryClient.invalidateQueries({ queryKey: getListMcpResourcesQueryKey(server.id) });
-          queryClient.invalidateQueries({ queryKey: getListMcpPromptsQueryKey(server.id) });
-        },
-      }
-    );
-  };
-
   return (
-    <div className="glass-panel p-5 rounded-2xl flex flex-col group hover:border-white/10 transition-all">
+    <div
+      onClick={onClick}
+      className="glass-panel p-5 rounded-2xl flex flex-col group hover:border-white/15 transition-all cursor-pointer"
+    >
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-white/5 flex items-center justify-center flex-shrink-0">
@@ -955,11 +542,12 @@ function ServerCard({
         <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{server.description}</p>
       )}
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs bg-secondary rounded-lg px-2 py-0.5 text-muted-foreground font-mono">
           {server.transportType}
         </span>
-        <span className="text-xs bg-secondary rounded-lg px-2 py-0.5 text-muted-foreground">
+        <span className="text-xs bg-secondary rounded-lg px-2 py-0.5 text-muted-foreground flex items-center gap-1">
+          <Wrench className="w-3 h-3" />
           {server.toolCount ?? 0} tools
         </span>
         {!server.enabled && (
@@ -967,73 +555,6 @@ function ServerCard({
             disabled
           </span>
         )}
-        {server.endpoint && (
-          <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-            {server.endpoint}
-          </span>
-        )}
-        {server.command && (
-          <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-            {server.command}
-          </span>
-        )}
-      </div>
-
-      {testResult && (
-        <div
-          className={cn(
-            "flex items-start gap-2 text-xs p-2.5 rounded-xl mb-3",
-            testResult.success
-              ? "bg-green-500/10 text-green-400 border border-green-500/20"
-              : "bg-red-500/10 text-red-400 border border-red-500/20"
-          )}
-        >
-          {testResult.success ? (
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          ) : (
-            <XCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          )}
-          <div>
-            <p className="font-medium">{testResult.success ? "Connected" : "Failed"}</p>
-            <p className="opacity-80">{testResult.message}</p>
-            {testResult.latencyMs > 0 && (
-              <p className="opacity-60">{testResult.latencyMs}ms</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {testMutation.isError && !testResult && (
-        <div className="flex items-center gap-2 text-xs p-2.5 rounded-xl mb-3 bg-red-500/10 text-red-400 border border-red-500/20">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          Test request failed
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 mt-auto pt-3 border-t border-white/5">
-        <button
-          onClick={handleTest}
-          disabled={testMutation.isPending}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-secondary hover:bg-secondary/80 text-white rounded-xl transition-colors disabled:opacity-50"
-        >
-          {testMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
-          {testMutation.isPending ? "Testing…" : "Test"}
-        </button>
-        <button
-          onClick={handleDiscover}
-          disabled={discoverMutation.isPending}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-primary/20 hover:bg-primary/30 text-primary rounded-xl transition-colors disabled:opacity-50"
-        >
-          {discoverMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-          {discoverMutation.isPending ? "Discovering…" : "Discover"}
-        </button>
-        <button
-          onClick={onOpenCapabilities}
-          className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium bg-secondary hover:bg-secondary/80 text-white rounded-xl transition-colors"
-          title="View tools, resources & prompts"
-        >
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
       </div>
     </div>
   );
@@ -1045,12 +566,13 @@ export default function McpServersPage() {
   const { data: servers, isLoading } = useListMcpServers();
   const deleteMutation = useDeleteMcpServer();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const [showFormDialog, setShowFormDialog] = useState(false);
   const [editingServer, setEditingServer] = useState<McpServer | null>(null);
-  const [capabilitiesServer, setCapabilitiesServer] = useState<McpServer | null>(null);
 
-  const handleDelete = (server: McpServer) => {
+  const handleDelete = (e: React.MouseEvent, server: McpServer) => {
+    e.stopPropagation();
     if (!confirm(`Delete "${server.name}"? This will also remove all its tools and resources.`)) return;
     deleteMutation.mutate(
       { id: server.id },
@@ -1069,9 +591,18 @@ export default function McpServersPage() {
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
-      <Sidebar />
+      {/* Full-width management layout — no sidebar */}
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-5xl mx-auto">
+          {/* Back button */}
+          <button
+            onClick={() => setLocation("/")}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white transition-colors mb-6 group"
+          >
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+            Back to Chat
+          </button>
+
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-display font-bold text-white">MCP Servers</h1>
@@ -1114,12 +645,13 @@ export default function McpServersPage() {
                 <ServerCard
                   key={server.id}
                   server={server}
-                  onOpenCapabilities={() => setCapabilitiesServer(server)}
-                  onEdit={() => {
+                  onClick={() => setLocation(`/servers/${server.id}`)}
+                  onEdit={(e) => {
+                    e.stopPropagation();
                     setEditingServer(server);
                     setShowFormDialog(true);
                   }}
-                  onDelete={() => handleDelete(server)}
+                  onDelete={(e) => handleDelete(e, server)}
                 />
               ))}
             </div>
@@ -1129,13 +661,6 @@ export default function McpServersPage() {
 
       {showFormDialog && (
         <ServerFormDialog server={editingServer} onClose={handleCloseForm} />
-      )}
-
-      {capabilitiesServer && (
-        <CapabilitiesDrawer
-          server={capabilitiesServer}
-          onClose={() => setCapabilitiesServer(null)}
-        />
       )}
     </div>
   );
