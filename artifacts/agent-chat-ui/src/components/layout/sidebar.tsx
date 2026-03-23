@@ -32,6 +32,46 @@ import { Input } from "@/components/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
 
+const DEFAULT_TITLE_PATTERNS = ["New Chat", "New Conversation"];
+
+function AnimatedTitle({ title, isActive }: { title: string; isActive: boolean }) {
+  const [displayTitle, setDisplayTitle] = useState(title);
+  const [animating, setAnimating] = useState(false);
+  const prevTitleRef = useRef(title);
+
+  useEffect((): void | (() => void) => {
+    const prev = prevTitleRef.current;
+    if (prev === title) return;
+    // Only animate when transitioning from a default/placeholder title to a real one
+    const wasDefault = DEFAULT_TITLE_PATTERNS.some((p) => prev === p);
+    prevTitleRef.current = title;
+    if (wasDefault) {
+      setAnimating(true);
+      const timer = setTimeout(() => {
+        setDisplayTitle(title);
+        setAnimating(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      setDisplayTitle(title);
+    }
+  }, [title]);
+
+  return (
+    <motion.span
+      key={displayTitle}
+      animate={{ opacity: animating ? 0 : 1, y: animating ? -4 : 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className={cn(
+        "font-medium text-sm truncate",
+        isActive ? "text-primary" : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground"
+      )}
+    >
+      {displayTitle}
+    </motion.span>
+  );
+}
+
 export function Sidebar() {
   const [location, setLocation] = useLocation();
   const [search, setSearch] = useState("");
@@ -213,19 +253,14 @@ export function Sidebar() {
                     "w-3.5 h-3.5 flex-shrink-0",
                     isActive ? "text-primary" : "text-muted-foreground"
                   )} />
-                  <span className={cn(
-                    "font-medium text-sm truncate",
-                    isActive ? "text-primary" : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground"
-                  )}>
-                    {chat.title}
-                  </span>
+                  <AnimatedTitle title={chat.title} isActive={isActive} />
                 </div>
                 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button 
                       onClick={e => e.preventDefault()}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded-md transition-all flex-shrink-0"
+                      className="sm:opacity-0 sm:group-hover:opacity-100 opacity-100 p-1 hover:bg-white/10 rounded-md transition-all flex-shrink-0"
                     >
                       <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
                     </button>

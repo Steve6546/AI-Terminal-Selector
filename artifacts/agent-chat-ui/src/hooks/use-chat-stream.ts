@@ -32,7 +32,8 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
   const sendMessage = useCallback(async (
     content: string,
     attachmentIds?: number[],
-    toolParams?: { serverId: number; toolName: string; toolArgs: Record<string, unknown> }
+    toolParams?: { serverId: number; toolName: string; toolArgs: Record<string, unknown> },
+    modelOverride?: string
   ) => {
     setIsStreaming(true);
     setStreamedText("");
@@ -41,7 +42,7 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     abortControllerRef.current = new AbortController();
 
     try {
-      const body: Record<string, unknown> = { content, model, mode };
+      const body: Record<string, unknown> = { content, model: modelOverride ?? model, mode };
       if (attachmentIds && attachmentIds.length > 0) {
         body.attachmentIds = attachmentIds;
       }

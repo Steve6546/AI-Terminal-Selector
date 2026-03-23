@@ -4,6 +4,11 @@ import { SettingsMapDefaultModel } from "@workspace/api-client-react";
 const MODEL_KEY = "agent_chat_selected_model";
 const MODE_KEY = "agent_chat_mode";
 
+export const AVAILABLE_MODELS: { id: SettingsMapDefaultModel; label: string }[] = [
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+];
+
 export type InteractionMode = "agent" | "tool";
 
 export function useLocalSettings() {

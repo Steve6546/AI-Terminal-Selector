@@ -26,8 +26,13 @@
 - Agent mode vs Tool mode in chat
 - Dark-mode UI with glowing accents, framer-motion animations
 - System status bar (connected servers, tools count, agent state) — polls every 30s
-- Auto-title conversations: after first AI response, title is set to first 60 chars of user message
+- Auto-title conversations: after first AI response, AI generates a short title (3-6 words) via claude-haiku-4-5; title animates in the sidebar with a fade transition
 - Inline conversation rename via sidebar 3-dot menu → Edit text field → Enter to confirm
+- Three-dot context menu on every conversation: Rename, Auto-name with AI, Pin/Unpin, Duplicate, Export (JSON/Markdown), Delete. Always visible on mobile, hover-visible on desktop.
+- Copy button on assistant messages (copies text, shows "Copied" toast)
+- Retry button on assistant messages: dropdown with "Retry with same model" or "Retry with [other model]" options. Truncates history from that message and regenerates.
+- Edit button on user messages: opens inline editor; on send, truncates history from that point and regenerates
+- In-session context summarization: if conversation history > 20 messages, older turns are summarized into a compact context block before sending to the model (prevents token limit issues)
 - Auto-create conversation on send: if no conversation selected, creates one and auto-navigates
 - Real terminal (xterm.js + node-pty) with WebSocket connection
 - File attachments (upload files, paste text, JSON, images)
@@ -71,6 +76,7 @@ scripts/                # Utility scripts
 - `GET/POST /api/anthropic/conversations` — list/create chats
 - `GET/PATCH/DELETE /api/anthropic/conversations/:id` — get/update/delete
 - `GET/POST /api/anthropic/conversations/:id/messages` — messages + SSE stream
+- `DELETE /api/anthropic/conversations/:id/messages-from/:messageId` — truncate messages from a point (for Edit/Retry)
 - `GET/POST/PATCH/DELETE /api/mcp-servers` — CRUD MCP servers
 - `POST /api/mcp-servers/:id/test` — test connection
 - `POST /api/mcp-servers/:id/discover` — discover tools

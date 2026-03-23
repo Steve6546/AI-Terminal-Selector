@@ -288,6 +288,32 @@ paths:
           content:
             text/event-stream: {}
 
+  /anthropic/conversations/{id}/messages-from/{messageId}:
+    delete:
+      operationId: truncateAnthropicMessagesFrom
+      tags: [anthropic]
+      summary: Delete all messages from a given message ID onward (inclusive)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Messages deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicError"
+
   /mcp-servers:
     get:
       operationId: listMcpServers

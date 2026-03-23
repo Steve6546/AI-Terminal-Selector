@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useListAnthropicMessages, useListExecutions, useCreateAnthropicConversation } from "@workspace/api-client-react";
+import { useListAnthropicMessages, useListExecutions, useCreateAnthropicConversation, useTruncateAnthropicMessagesFrom } from "@workspace/api-client-react";
 import type { AnthropicMessage, Execution } from "@workspace/api-client-react";
 import { useLocalSettings } from "@/hooks/use-local-settings";
 import { useChatStream, type LiveToolExecution } from "@/hooks/use-chat-stream";
@@ -22,6 +22,8 @@ import { ToolExecutionCard } from "@/components/chat/tool-execution-card";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { getListAnthropicMessagesQueryKey } from "@workspace/api-client-react";
 
 function friendlyErrorMessage(err: Error): string {
   const msg = err.message.toLowerCase();
@@ -143,6 +145,8 @@ export default function ChatPage() {
 
   const { model, setModel, mode, setMode } = useLocalSettings();
   const createMutation = useCreateAnthropicConversation();
+  const truncateMutation = useTruncateAnthropicMessagesFrom();
+  const queryClient = useQueryClient();
 
   const { data: messages, isLoading: loadingMessages } = useListAnthropicMessages(
     conversationId ?? 0,
@@ -207,6 +211,57 @@ export default function ChatPage() {
     }
     sendMessage(text, attachmentIds, toolParams);
   }, [conversationId, createMutation, sendMessage, setLocation]);
+
+  // Retry: truncate from the user message that preceded the assistant message (inclusive),
+  // removing both the user turn and the assistant turn, then re-send the user's content
+  // as a fresh message. This avoids duplicating the user turn in history.
+  const handleRetry = useCallback((assistantMessageId: number, retryModel: string) => {
+    if (!conversationId || isStreaming) return;
+    setStreamError(null);
+
+    // Find the assistant message and the user message just before it
+    const allMessages = messages ?? [];
+    const assistantIdx = allMessages.findIndex((m) => m.id === assistantMessageId);
+    if (assistantIdx < 0) return;
+    const userMessage = assistantIdx > 0 ? allMessages[assistantIdx - 1] : null;
+    if (!userMessage || userMessage.role !== "user") return;
+
+    // Switch to the chosen model in settings so TopBar reflects the change
+    if (retryModel !== model) {
+      setModel(retryModel as typeof model);
+    }
+
+    // Truncate from the user message onward (removes user + assistant + any later messages),
+    // then re-send the user's content as a fresh message.
+    // Passing retryModel explicitly bypasses React's async model state update.
+    truncateMutation.mutate(
+      { id: conversationId, messageId: userMessage.id },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
+          queryClient.invalidateQueries({ queryKey: ["executions", conversationId] });
+          sendMessage(userMessage.content, undefined, undefined, retryModel);
+        }
+      }
+    );
+  }, [conversationId, isStreaming, messages, model, setModel, truncateMutation, queryClient, sendMessage]);
+
+  // Edit: truncate from the chosen user message onward, then re-send with new content
+  const handleEditResend = useCallback((userMessageId: number, newContent: string) => {
+    if (!conversationId || isStreaming) return;
+    setStreamError(null);
+
+    truncateMutation.mutate(
+      { id: conversationId, messageId: userMessageId },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
+          queryClient.invalidateQueries({ queryKey: ["executions", conversationId] });
+          sendMessage(newContent);
+        }
+      }
+    );
+  }, [conversationId, isStreaming, truncateMutation, queryClient, sendMessage]);
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
@@ -293,7 +348,14 @@ export default function ChatPage() {
                       transition={{ duration: 0.3 }}
                     >
                       {item.type === "msg"
-                        ? <MessageBubble message={item.data} />
+                        ? (
+                          <MessageBubble
+                            message={item.data}
+                            currentModel={model}
+                            onRetry={item.data.role === "assistant" ? handleRetry : undefined}
+                            onEditResend={item.data.role === "user" ? handleEditResend : undefined}
+                          />
+                        )
                         : <ToolExecutionCard execution={item.data} />
                       }
                     </motion.div>

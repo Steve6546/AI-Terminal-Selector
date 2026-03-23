@@ -910,6 +910,86 @@ export const useSendAnthropicMessage = <
 };
 
 /**
+ * @summary Delete all messages from a given message ID onward (inclusive)
+ */
+export const getTruncateAnthropicMessagesFromUrl = (id: number, messageId: number) => {
+  return `/api/anthropic/conversations/${id}/messages-from/${messageId}`;
+};
+
+export const truncateAnthropicMessagesFrom = async (
+  id: number,
+  messageId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getTruncateAnthropicMessagesFromUrl(id, messageId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getTruncateAnthropicMessagesFromMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+    TError,
+    { id: number; messageId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+  TError,
+  { id: number; messageId: number },
+  TContext
+> => {
+  const mutationKey = ["truncateAnthropicMessagesFrom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+    { id: number; messageId: number }
+  > = (props) => {
+    const { id, messageId } = props ?? {};
+    return truncateAnthropicMessagesFrom(id, messageId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TruncateAnthropicMessagesFromMutationResult = NonNullable<
+  Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>
+>;
+export type TruncateAnthropicMessagesFromMutationError = ErrorType<unknown>;
+
+export const useTruncateAnthropicMessagesFrom = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+    TError,
+    { id: number; messageId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+  TError,
+  { id: number; messageId: number },
+  TContext
+> => {
+  return useMutation(getTruncateAnthropicMessagesFromMutationOptions(options));
+};
+
+/**
  * @summary List all MCP servers
  */
 export const getListMcpServersUrl = () => {

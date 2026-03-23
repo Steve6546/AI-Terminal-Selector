@@ -1,14 +1,27 @@
+import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { format } from "date-fns";
-import { User, Sparkles } from "lucide-react";
+import { User, Sparkles, Copy, Check, RotateCcw, Edit2, Send, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AnthropicMessage } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
+import TextareaAutosize from "react-textarea-autosize";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { AVAILABLE_MODELS } from "@/hooks/use-local-settings";
 
 interface MessageBubbleProps {
   message: AnthropicMessage;
+  currentModel?: string;
+  onRetry?: (messageId: number, model: string) => void;
+  onEditResend?: (messageId: number, newContent: string) => void;
 }
 
 function CodeBlock({ className, children }: { className?: string; children?: React.ReactNode }) {
@@ -40,13 +53,55 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
   );
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, currentModel, onRetry, onEditResend }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const { toast } = useToast();
+
+  const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      toast({ description: "Copied to clipboard", duration: 2000 });
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [message.content, toast]);
+
+  const handleRetryWithModel = useCallback((model: string) => {
+    onRetry?.(message.id, model);
+  }, [message.id, onRetry]);
+
+  const handleEditSubmit = useCallback(() => {
+    const trimmed = editText.trim();
+    if (!trimmed || trimmed === message.content) {
+      setIsEditing(false);
+      setEditText(message.content);
+      return;
+    }
+    onEditResend?.(message.id, trimmed);
+    setIsEditing(false);
+  }, [editText, message.content, message.id, onEditResend]);
+
+  const handleEditCancel = useCallback(() => {
+    setIsEditing(false);
+    setEditText(message.content);
+  }, [message.content]);
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleEditSubmit();
+    } else if (e.key === "Escape") {
+      handleEditCancel();
+    }
+  };
 
   return (
     <div
       className={cn(
-        "w-full flex py-6",
+        "w-full flex py-6 group/bubble",
         isUser ? "justify-end" : "justify-start bg-secondary/20 border-y border-white/[0.02]"
       )}
     >
@@ -80,40 +135,142 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <span>{format(new Date(message.createdAt), "h:mm a")}</span>
           </div>
 
-          <div
-            className={cn(
-              "text-sm leading-relaxed overflow-hidden",
-              isUser
-                ? "bg-secondary text-secondary-foreground px-5 py-3 rounded-2xl rounded-tr-sm"
-                : "w-full text-foreground"
-            )}
-          >
-            {isUser ? (
-              <p className="whitespace-pre-wrap">{message.content}</p>
-            ) : (
-              <div className="markdown-content w-full">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    code: CodeBlock,
-                    p: ({ children }) => <p className="mb-4 last:mb-0 text-foreground/90">{children}</p>,
-                    a: ({ href, children }) => (
-                      <a href={href} className="text-primary hover:text-primary/80 underline underline-offset-4">
-                        {children}
-                      </a>
-                    ),
-                    ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
-                    h1: ({ children }) => <h1 className="text-2xl font-bold font-display mt-8 mb-4 text-white">{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-xl font-bold font-display mt-6 mb-3 text-white">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-lg font-bold font-display mt-4 mb-2 text-white">{children}</h3>,
-                  }}
+          {isEditing && isUser ? (
+            <div className="w-full max-w-xl">
+              <TextareaAutosize
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onKeyDown={handleEditKeyDown}
+                autoFocus
+                className="w-full bg-secondary border border-primary/50 rounded-2xl rounded-tr-sm px-5 py-3 text-sm text-foreground outline-none resize-none focus:ring-1 focus:ring-primary custom-scrollbar"
+                minRows={2}
+                maxRows={12}
+              />
+              <div className="flex items-center gap-2 mt-2 justify-end">
+                <button
+                  onClick={handleEditCancel}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-white hover:bg-white/10 transition-colors"
                 >
-                  {message.content}
-                </ReactMarkdown>
+                  <X className="w-3.5 h-3.5" /> Cancel
+                </button>
+                <button
+                  onClick={handleEditSubmit}
+                  disabled={!editText.trim()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" /> Send
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "text-sm leading-relaxed overflow-hidden",
+                isUser
+                  ? "bg-secondary text-secondary-foreground px-5 py-3 rounded-2xl rounded-tr-sm"
+                  : "w-full text-foreground"
+              )}
+            >
+              {isUser ? (
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              ) : (
+                <div className="markdown-content w-full">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code: CodeBlock,
+                      p: ({ children }) => <p className="mb-4 last:mb-0 text-foreground/90">{children}</p>,
+                      a: ({ href, children }) => (
+                        <a href={href} className="text-primary hover:text-primary/80 underline underline-offset-4">
+                          {children}
+                        </a>
+                      ),
+                      ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
+                      h1: ({ children }) => <h1 className="text-2xl font-bold font-display mt-8 mb-4 text-white">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-xl font-bold font-display mt-6 mb-3 text-white">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-lg font-bold font-display mt-4 mb-2 text-white">{children}</h3>,
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {!isEditing && (
+            <div
+              className={cn(
+                "flex items-center gap-1 mt-0.5",
+                isUser ? "flex-row-reverse" : "flex-row",
+                "opacity-0 group-hover/bubble:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
+              )}
+            >
+                {!isUser && (
+                  <>
+                    <button
+                      onClick={handleCopy}
+                      title="Copy message"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-white hover:bg-white/10 transition-all"
+                    >
+                      {copied ? (
+                        <Check className="w-3.5 h-3.5 text-green-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+                    </button>
+
+                    {onRetry && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            title="Retry"
+                            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-white hover:bg-white/10 transition-all"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Retry</span>
+                            <ChevronDown className="w-3 h-3 opacity-60" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-52 bg-card border-border">
+                          <DropdownMenuItem
+                            className="gap-2 cursor-pointer text-sm"
+                            onClick={() => handleRetryWithModel(message.model ?? currentModel ?? "claude-sonnet-4-6")}
+                          >
+                            <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                            Retry with same model
+                          </DropdownMenuItem>
+                          {AVAILABLE_MODELS.filter((m) => m.id !== (message.model ?? currentModel ?? "claude-sonnet-4-6")).map((m) => (
+                            <DropdownMenuItem
+                              key={m.id}
+                              className="gap-2 cursor-pointer text-sm"
+                              onClick={() => handleRetryWithModel(m.id)}
+                            >
+                              <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                              Retry with {m.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </>
+                )}
+
+                {isUser && onEditResend && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    title="Edit message"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-white hover:bg-white/10 transition-all"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Edit</span>
+                  </button>
+                )}
+            </div>
+          )}
         </div>
       </div>
     </div>

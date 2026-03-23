@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { conversations, messages, executions, mcpTools, mcpServers, attachments } from "@workspace/db";
-import { eq, desc, count, and, inArray } from "drizzle-orm";
+import { eq, desc, count, and, inArray, gte } from "drizzle-orm";
 import {
   CreateAnthropicConversationBody,
   UpdateAnthropicConversationBody,
@@ -350,6 +350,66 @@ router.post("/conversations/:id/messages", async (req, res) => {
     const sendEvent = (data: Record<string, unknown>) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
+
+    // ── In-session context summarization ─────────────────────────────────────
+    // If the conversation history is long (> 20 messages), summarize older turns
+    // into a compact context block to avoid hitting token limits while keeping
+    // the recent exchange intact for coherent responses.
+    const SUMMARY_THRESHOLD = 20;
+    const RECENT_MESSAGES_TO_KEEP = 8;
+
+    if (chatMessages.length > SUMMARY_THRESHOLD) {
+      const olderMessages = chatMessages.slice(0, chatMessages.length - RECENT_MESSAGES_TO_KEEP);
+
+      // Build a plain-text transcript of older messages for summarization
+      const transcript = olderMessages
+        .map((m) => {
+          const roleLabel = m.role === "user" ? "User" : "Assistant";
+          const text = typeof m.content === "string"
+            ? m.content
+            : Array.isArray(m.content)
+              ? (m.content as Array<{ type: string; text?: string }>)
+                  .filter((b) => b.type === "text" && b.text)
+                  .map((b) => b.text)
+                  .join(" ")
+              : "";
+          return `${roleLabel}: ${text.slice(0, 500)}`;
+        })
+        .join("\n\n");
+
+      try {
+        const summaryResult = await anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 512,
+          messages: [
+            {
+              role: "user",
+              content: `Summarize the following conversation history into a concise paragraph (max 300 words) that captures the key topics, decisions, and context needed to continue the conversation:\n\n${transcript}\n\nSummary:`,
+            },
+          ],
+        });
+
+        const summaryText = summaryResult.content[0]?.type === "text"
+          ? summaryResult.content[0].text.trim()
+          : "";
+
+        if (summaryText) {
+          // Replace the older messages with a single summarized context message
+          const summaryBlock: { role: "user" | "assistant"; content: string } = {
+            role: "user",
+            content: `[Earlier conversation summary: ${summaryText}]`,
+          };
+          // Need a placeholder assistant ack to keep alternating role structure
+          const ackBlock: { role: "user" | "assistant"; content: string } = {
+            role: "assistant",
+            content: "Understood, I'll keep that context in mind.",
+          };
+          chatMessages.splice(0, olderMessages.length, summaryBlock, ackBlock);
+        }
+      } catch {
+        // Summarization failed — continue with full history (silent fallback)
+      }
+    }
 
     let fullResponse = "";
 
@@ -862,6 +922,49 @@ router.post("/conversations/:id/messages", async (req, res) => {
       );
       res.end();
     }
+  }
+});
+
+// ─── DELETE /conversations/:id/messages-from/:messageId ───────────────────────
+// Delete all messages from the given message ID onward (inclusive by createdAt),
+// as well as any executions that started at or after that point.
+// Used by Edit & Retry features in the frontend.
+router.delete("/conversations/:id/messages-from/:messageId", async (req, res) => {
+  try {
+    const convId = parseInt(req.params.id);
+    const messageId = parseInt(req.params.messageId);
+
+    // Find the target message to get its createdAt
+    const [target] = await db
+      .select({ createdAt: messages.createdAt })
+      .from(messages)
+      .where(and(eq(messages.id, messageId), eq(messages.conversationId, convId)));
+
+    if (!target) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    // Delete all messages with createdAt >= target.createdAt in this conversation
+    await db
+      .delete(messages)
+      .where(and(eq(messages.conversationId, convId), gte(messages.createdAt, target.createdAt)));
+
+    // Delete any executions that started at or after the truncation point
+    await db
+      .delete(executions)
+      .where(and(eq(executions.conversationId, convId), gte(executions.startedAt, target.createdAt)));
+
+    // Update conversation updatedAt
+    await db
+      .update(conversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(conversations.id, convId));
+
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Failed to truncate messages");
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
