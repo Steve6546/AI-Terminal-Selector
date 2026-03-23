@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import ChatPage from "./pages/chat-page";
 import McpServersPage from "./pages/mcp-servers-page";
 import SettingsPage from "./pages/settings-page";
+import TerminalPage from "./pages/terminal-page";
 import NotFound from "./pages/not-found";
 
 // Initialize Query Client
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/" component={ChatPage} />
       <Route path="/c/:id" component={ChatPage} />
       <Route path="/servers" component={McpServersPage} />
+      <Route path="/terminal" component={TerminalPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>

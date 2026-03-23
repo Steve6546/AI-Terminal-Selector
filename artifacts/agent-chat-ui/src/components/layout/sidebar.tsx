@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { 
   MessageSquare, Plus, Search, MoreHorizontal, 
-  Settings, Server, Terminal, Pin, Trash2, Edit2, Copy
+  Settings, Server, Terminal, Trash2, Edit2, Check, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   useListAnthropicConversations, 
   useCreateAnthropicConversation,
-  useDeleteAnthropicConversation
+  useDeleteAnthropicConversation,
+  useUpdateAnthropicConversation,
 } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 
@@ -21,14 +22,28 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { useQueryClient } from "@tanstack/react-query";
+import { getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
 
 export function Sidebar() {
   const [location, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
   
   const { data: conversations, isLoading } = useListAnthropicConversations();
   const createMutation = useCreateAnthropicConversation();
   const deleteMutation = useDeleteAnthropicConversation();
+  const updateMutation = useUpdateAnthropicConversation();
+
+  useEffect(() => {
+    if (editingId !== null) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingId]);
 
   const handleNewChat = () => {
     createMutation.mutate(
@@ -47,8 +62,45 @@ export function Sidebar() {
     deleteMutation.mutate({ id }, {
       onSuccess: () => {
         if (location === `/c/${id}`) setLocation("/");
+        queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
       }
     });
+  };
+
+  const startRename = (e: React.MouseEvent, id: number, currentTitle: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditingId(id);
+    setEditingTitle(currentTitle);
+  };
+
+  const commitRename = (id: number) => {
+    const trimmed = editingTitle.trim();
+    if (trimmed && trimmed.length > 0) {
+      updateMutation.mutate(
+        { id, data: { title: trimmed } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
+          }
+        }
+      );
+    }
+    setEditingId(null);
+  };
+
+  const cancelRename = () => {
+    setEditingId(null);
+    setEditingTitle("");
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent, id: number) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitRename(id);
+    } else if (e.key === "Escape") {
+      cancelRename();
+    }
   };
 
   const filteredConversations = conversations?.filter(c => 
@@ -99,62 +151,107 @@ export function Sidebar() {
             ))}
           </div>
         ) : filteredConversations.length === 0 ? (
-          <div className="text-center text-xs text-muted-foreground mt-8">
-            No conversations found
+          <div className="text-center text-xs text-muted-foreground mt-8 px-4">
+            {search ? "No matches found" : "No conversations yet. Start a new chat!"}
           </div>
         ) : (
-          filteredConversations.map((chat) => {
-            const isActive = location === `/c/${chat.id}`;
-            return (
-              <Link key={chat.id} href={`/c/${chat.id}`} className={cn(
-                "group flex flex-col gap-1 p-3 rounded-xl cursor-pointer transition-all duration-200",
-                isActive 
-                  ? "bg-primary/10 border border-primary/20" 
-                  : "hover:bg-white/5 border border-transparent"
-              )}>
-                <div className="flex items-center justify-between w-full">
-                  <span className={cn(
-                    "font-medium text-sm truncate pr-2",
-                    isActive ? "text-primary" : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground"
+          <AnimatePresence initial={false}>
+            {filteredConversations.map((chat) => {
+              const isActive = location === `/c/${chat.id}`;
+              const isEditing = editingId === chat.id;
+              
+              return (
+                <motion.div
+                  key={chat.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <Link href={`/c/${chat.id}`} className={cn(
+                    "group flex flex-col gap-1 p-3 rounded-xl cursor-pointer transition-all duration-200 block",
+                    isActive 
+                      ? "bg-primary/10 border border-primary/20" 
+                      : "hover:bg-white/5 border border-transparent"
                   )}>
-                    {chat.title}
-                  </span>
-                  
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button 
-                        onClick={e => e.preventDefault()}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded-md transition-all"
-                      >
-                        <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48 bg-card border-border">
-                      <DropdownMenuItem className="gap-2 cursor-pointer">
-                        <Edit2 className="w-4 h-4 text-muted-foreground" /> Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2 cursor-pointer">
-                        <Pin className="w-4 h-4 text-muted-foreground" /> Pin to top
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2 cursor-pointer">
-                        <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="bg-border" />
-                      <DropdownMenuItem 
-                        onClick={(e) => handleDelete(e as React.MouseEvent, chat.id)}
-                        className="gap-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
-                      >
-                        <Trash2 className="w-4 h-4" /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {format(new Date(chat.createdAt), "MMM d, h:mm a")}
-                </span>
-              </Link>
-            );
-          })
+                    <div className="flex items-center justify-between w-full">
+                      {isEditing ? (
+                        <div className="flex items-center gap-1 flex-1" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+                          <input
+                            ref={editInputRef}
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onKeyDown={(e) => handleRenameKeyDown(e, chat.id)}
+                            onBlur={() => commitRename(chat.id)}
+                            className="flex-1 min-w-0 bg-background border border-primary/50 rounded-lg px-2 py-0.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <button onClick={() => commitRename(chat.id)} className="p-1 text-green-400 hover:text-green-300">
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={cancelRename} className="p-1 text-muted-foreground hover:text-white">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <MessageSquare className={cn(
+                              "w-3.5 h-3.5 flex-shrink-0",
+                              isActive ? "text-primary" : "text-muted-foreground"
+                            )} />
+                            <span className={cn(
+                              "font-medium text-sm truncate",
+                              isActive ? "text-primary" : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground"
+                            )}>
+                              {chat.title}
+                            </span>
+                          </div>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button 
+                                onClick={e => e.preventDefault()}
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded-md transition-all flex-shrink-0"
+                              >
+                                <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48 bg-card border-border">
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer"
+                                onClick={(e) => startRename(e as React.MouseEvent, chat.id, chat.title)}
+                              >
+                                <Edit2 className="w-4 h-4 text-muted-foreground" /> Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-border" />
+                              <DropdownMenuItem 
+                                onClick={(e) => handleDelete(e as React.MouseEvent, chat.id)}
+                                className="gap-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+                              >
+                                <Trash2 className="w-4 h-4" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </>
+                      )}
+                    </div>
+                    {!isEditing && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {format(new Date(chat.createdAt), "MMM d, h:mm a")}
+                        </span>
+                        {(chat.messageCount ?? 0) > 0 && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {chat.messageCount} msg{chat.messageCount !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         )}
       </div>
 
@@ -166,6 +263,13 @@ export function Sidebar() {
         )}>
           <Server className="w-4 h-4" />
           <span>MCP Servers</span>
+        </Link>
+        <Link href="/terminal" className={cn(
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+          location === "/terminal" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
+        )}>
+          <Terminal className="w-4 h-4" />
+          <span>Terminal</span>
         </Link>
         <Link href="/settings" className={cn(
           "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",

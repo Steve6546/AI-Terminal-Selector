@@ -1,5 +1,5 @@
 import { SettingsMapDefaultModel, useGetSystemStatus } from "@workspace/api-client-react";
-import { Settings, Zap } from "lucide-react";
+import { Settings, Zap, TerminalSquare } from "lucide-react";
 import { Link } from "wouter";
 import {
   Select,
@@ -13,14 +13,15 @@ import { cn } from "@/lib/utils";
 interface TopBarProps {
   model: SettingsMapDefaultModel;
   onModelChange: (model: SettingsMapDefaultModel) => void;
+  onTerminalToggle?: () => void;
 }
 
-export function TopBar({ model, onModelChange }: TopBarProps) {
-  const { data: status } = useGetSystemStatus();
+export function TopBar({ model, onModelChange, onTerminalToggle }: TopBarProps) {
+  const { data: status } = useGetSystemStatus({ query: { refetchInterval: 30_000, queryKey: ["system-status"] } });
 
   return (
-    <div className="h-14 w-full flex items-center justify-between px-6 glass-panel border-b border-white/5 relative z-10">
-      
+    <div className="h-14 w-full flex items-center justify-between px-6 glass-panel border-b border-white/5 relative z-10 shrink-0">
+
       {/* System Status Pills */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-white/5 text-xs font-medium text-muted-foreground">
@@ -30,7 +31,7 @@ export function TopBar({ model, onModelChange }: TopBarProps) {
           )} />
           <span className="text-white">{status?.connectedServers || 0}</span> Servers
         </div>
-        
+
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-white/5 text-xs font-medium text-muted-foreground hidden sm:flex">
           <Zap className="w-3.5 h-3.5 text-yellow-500" />
           <span className="text-white">{status?.totalTools || 0}</span> Tools Ready
@@ -70,6 +71,17 @@ export function TopBar({ model, onModelChange }: TopBarProps) {
         </div>
 
         <div className="w-px h-6 bg-white/10 hidden sm:block" />
+
+        {/* Terminal Toggle */}
+        {onTerminalToggle && (
+          <button
+            onClick={onTerminalToggle}
+            className="p-2 text-muted-foreground hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            title="Toggle Terminal"
+          >
+            <TerminalSquare className="w-5 h-5" />
+          </button>
+        )}
 
         <Link href="/settings" className="p-2 text-muted-foreground hover:text-white hover:bg-white/10 rounded-lg transition-colors">
           <Settings className="w-5 h-5" />

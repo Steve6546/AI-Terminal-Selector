@@ -1,17 +1,9 @@
 /**
- * MCP Gateway Client — proxies test/discover requests to the Python FastAPI
- * agent-backend service running on AGENT_BACKEND_PORT (default 9000).
- *
- * Auth: uses ADMIN_SECRET, falling back to SECRET_ENCRYPTION_KEY (matches
- * what the Python gateway expects). Both env vars are Replit secrets.
- *
- * Retry: callGateway accepts a retryCount and retries with exponential backoff
- * on transient failures (network errors, 5xx responses).
+ * MCP Gateway Client — proxies requests to the Python FastAPI agent-backend
+ * service running on AGENT_BACKEND_PORT (default 9000).
  */
 
 const AGENT_BACKEND_URL = `http://localhost:${process.env.AGENT_BACKEND_PORT ?? "9000"}`;
-const ADMIN_SECRET =
-  process.env.ADMIN_SECRET ?? process.env.SECRET_ENCRYPTION_KEY ?? "";
 
 export interface McpServerConfig {
   transportType: string;
@@ -54,35 +46,39 @@ export interface McpTestResult {
   latencyMs: number;
 }
 
-/**
- * Single attempt to call the Python gateway.
- * Throws on network error or non-OK HTTP status.
- */
+export interface McpExecuteResult {
+  success: boolean;
+  content?: unknown;
+  error?: string;
+  latencyMs: number;
+}
+
+function buildServerBody(config: McpServerConfig) {
+  return {
+    transport_type: config.transportType,
+    endpoint: config.endpoint,
+    command: config.command,
+    args: config.args ?? [],
+    auth_type: config.authType ?? "none",
+    auth_secret: config.authSecret,
+    timeout: config.timeout ?? 30,
+    retry_count: 0,
+  };
+}
+
 async function callGatewayOnce<T>(
-  path: "/gateway/test" | "/gateway/discover",
-  config: McpServerConfig
+  path: "/gateway/test" | "/gateway/discover" | "/gateway/execute",
+  requestBody: unknown,
+  timeoutMs: number
 ): Promise<T> {
-  const timeoutMs = ((config.timeout ?? 30) + 15) * 1000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${AGENT_BACKEND_URL}${path}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        transport_type: config.transportType,
-        endpoint: config.endpoint,
-        command: config.command,
-        args: config.args ?? [],
-        auth_type: config.authType ?? "none",
-        auth_secret: config.authSecret,
-        timeout: config.timeout ?? 30,
-        retry_count: 0, // retries handled in Node layer
-        authorization: ADMIN_SECRET ? `Bearer ${ADMIN_SECRET}` : undefined,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
@@ -103,15 +99,13 @@ async function callGatewayOnce<T>(
   }
 }
 
-/**
- * Call the gateway with bounded retry and exponential backoff.
- * retryCount = 0 means one attempt total (no retries).
- */
 async function callGateway<T>(
-  path: "/gateway/test" | "/gateway/discover",
-  config: McpServerConfig
+  path: "/gateway/test" | "/gateway/discover" | "/gateway/execute",
+  requestBody: unknown,
+  retryCount: number,
+  timeoutMs: number
 ): Promise<T> {
-  const maxAttempts = Math.max(1, (config.retryCount ?? 0) + 1);
+  const maxAttempts = Math.max(1, retryCount + 1);
   let lastError: Error = new Error("No attempts");
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -120,7 +114,7 @@ async function callGateway<T>(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     try {
-      return await callGatewayOnce<T>(path, config);
+      return await callGatewayOnce<T>(path, requestBody, timeoutMs);
     } catch (err) {
       lastError = err as Error;
     }
@@ -130,11 +124,13 @@ async function callGateway<T>(
 }
 
 export async function testMcpConnection(config: McpServerConfig): Promise<McpTestResult> {
+  const timeoutMs = ((config.timeout ?? 30) + 15) * 1000;
   const result = await callGateway<{
     success: boolean;
     message: string;
     latency_ms: number;
-  }>("/gateway/test", config);
+  }>("/gateway/test", buildServerBody(config), config.retryCount ?? 0, timeoutMs);
+
   return {
     success: result.success,
     message: result.message,
@@ -145,11 +141,12 @@ export async function testMcpConnection(config: McpServerConfig): Promise<McpTes
 export async function discoverMcpCapabilities(
   config: McpServerConfig
 ): Promise<McpDiscoveryResult> {
+  const timeoutMs = ((config.timeout ?? 30) + 15) * 1000;
   const result = await callGateway<{
     tools: Array<{ name: string; description?: string; input_schema?: Record<string, unknown> }>;
     resources: Array<{ uri: string; name: string; description?: string; mime_type?: string }>;
     prompts: Array<{ name: string; description?: string }>;
-  }>("/gateway/discover", config);
+  }>("/gateway/discover", buildServerBody(config), config.retryCount ?? 0, timeoutMs);
 
   return {
     tools: result.tools.map((t) => ({
@@ -167,5 +164,34 @@ export async function discoverMcpCapabilities(
       name: p.name,
       description: p.description,
     })),
+  };
+}
+
+export async function executeMcpTool(
+  config: McpServerConfig,
+  toolName: string,
+  toolArguments: Record<string, unknown>
+): Promise<McpExecuteResult> {
+  const timeoutMs = ((config.timeout ?? 30) + 15) * 1000;
+  const result = await callGatewayOnce<{
+    success: boolean;
+    content?: unknown;
+    error?: string;
+    latency_ms: number;
+  }>(
+    "/gateway/execute",
+    {
+      server: buildServerBody(config),
+      tool_name: toolName,
+      arguments: toolArguments,
+    },
+    timeoutMs
+  );
+
+  return {
+    success: result.success,
+    content: result.content,
+    error: result.error,
+    latencyMs: result.latency_ms,
   };
 }

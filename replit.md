@@ -25,7 +25,10 @@
 - MCP server management (add, test, discover tools)
 - Agent mode vs Tool mode in chat
 - Dark-mode UI with glowing accents, framer-motion animations
-- System status bar (connected servers, tools count, agent state)
+- System status bar (connected servers, tools count, agent state) — polls every 30s
+- Auto-title conversations: after first AI response, title is set to first 60 chars of user message
+- Inline conversation rename via sidebar 3-dot menu → Edit text field → Enter to confirm
+- Auto-create conversation on send: if no conversation selected, creates one and auto-navigates
 
 ## Structure
 

@@ -1,13 +1,14 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages } from "@workspace/db";
-import { eq, desc, count } from "drizzle-orm";
+import { conversations, messages, executions, mcpTools, mcpServers, attachments } from "@workspace/db";
+import { eq, desc, count, and, inArray } from "drizzle-orm";
 import {
   CreateAnthropicConversationBody,
   UpdateAnthropicConversationBody,
   SendAnthropicMessageBody,
 } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { executeMcpTool } from "../../lib/mcp-gateway";
 import { handleRouteError } from "../../lib/handle-error";
 
 const router: IRouter = Router();
@@ -190,6 +191,69 @@ router.get("/conversations/:id/messages", async (req, res) => {
   }
 });
 
+/**
+ * Build Anthropic tool definitions from enabled MCP tools for a given
+ * list of server IDs (or all enabled servers if none provided).
+ */
+async function buildAnthropicTools(
+  serverIds?: number[]
+): Promise<
+  Array<{
+    name: string;
+    description: string;
+    input_schema: Record<string, unknown>;
+    _toolId: number;
+    _serverId: number;
+  }>
+> {
+  const toolRows = serverIds?.length
+    ? await db
+        .select({
+          id: mcpTools.id,
+          serverId: mcpTools.serverId,
+          toolName: mcpTools.toolName,
+          description: mcpTools.description,
+          inputSchema: mcpTools.inputSchema,
+        })
+        .from(mcpTools)
+        .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
+        .where(
+          and(
+            eq(mcpTools.enabled, true),
+            eq(mcpServers.enabled, true),
+            eq(mcpServers.status, "connected")
+          )
+        )
+    : await db
+        .select({
+          id: mcpTools.id,
+          serverId: mcpTools.serverId,
+          toolName: mcpTools.toolName,
+          description: mcpTools.description,
+          inputSchema: mcpTools.inputSchema,
+        })
+        .from(mcpTools)
+        .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
+        .where(
+          and(
+            eq(mcpTools.enabled, true),
+            eq(mcpServers.enabled, true),
+            eq(mcpServers.status, "connected")
+          )
+        );
+
+  return toolRows.map((t) => ({
+    name: `${t.serverId}__${t.toolName}`,
+    description: t.description ?? t.toolName,
+    input_schema: (t.inputSchema as Record<string, unknown>) ?? {
+      type: "object",
+      properties: {},
+    },
+    _toolId: t.id,
+    _serverId: t.serverId,
+  }));
+}
+
 router.post("/conversations/:id/messages", async (req, res) => {
   try {
     const convId = parseInt(req.params.id);
@@ -206,6 +270,11 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     const model = body.model ?? conv.model ?? "claude-sonnet-4-6";
+    const mode = (req.body as { mode?: string }).mode ?? "agent";
+    const rawAttachmentIds = (req.body as { attachmentIds?: unknown }).attachmentIds;
+    const attachmentIds: number[] = Array.isArray(rawAttachmentIds)
+      ? rawAttachmentIds.filter((id): id is number => typeof id === "number")
+      : [];
 
     await db.insert(messages).values({
       conversationId: convId,
@@ -214,39 +283,317 @@ router.post("/conversations/:id/messages", async (req, res) => {
       model,
     });
 
+    // Fetch attachment records if provided
+    const attachmentRows = attachmentIds.length > 0
+      ? await db.select().from(attachments).where(inArray(attachments.id, attachmentIds))
+      : [];
+
     const allMessages = await db
       .select()
       .from(messages)
       .where(eq(messages.conversationId, convId))
       .orderBy(messages.createdAt);
 
-    const chatMessages = allMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+    // Build chat messages, enriching the last user message with file attachments
+    const IMAGE_MIMES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+    type ImageMediaType = typeof IMAGE_MIMES[number];
+    function isImageMime(m: string): m is ImageMediaType {
+      return (IMAGE_MIMES as readonly string[]).includes(m);
+    }
+
+    type MsgParam = { role: "user" | "assistant"; content: string | Array<{ type: string; [k: string]: unknown }> };
+
+    const chatMessages: MsgParam[] = allMessages.map((m, idx) => {
+      const isLastUser = idx === allMessages.length - 1 && m.role === "user";
+      if (isLastUser && attachmentRows.length > 0) {
+        const contentBlocks: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text: m.content }];
+        for (const att of attachmentRows) {
+          if (!att.content) continue;
+          if (isImageMime(att.fileType)) {
+            contentBlocks.push({
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: att.fileType as ImageMediaType,
+                data: att.content,
+              },
+            });
+          } else {
+            // Text/code/PDF: include as a text block with filename context
+            const decoded = Buffer.from(att.content, "base64").toString("utf-8");
+            contentBlocks.push({
+              type: "text",
+              text: `\n\n<file name="${att.fileName}" type="${att.fileType}">\n${decoded}\n</file>`,
+            });
+          }
+        }
+        return {
+          role: m.role as "user" | "assistant",
+          content: contentBlocks,
+        };
+      }
+      return {
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      };
+    });
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
+    const sendEvent = (data: Record<string, unknown>) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
     let fullResponse = "";
 
-    const stream = anthropic.messages.stream({
-      model,
-      max_tokens: 8192,
-      messages: chatMessages,
-    });
+    if (mode === "agent") {
+      // Agent mode: enable MCP tools and handle tool_use blocks
+      const mcpToolDefs = await buildAnthropicTools();
 
-    for await (const event of stream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        fullResponse += event.delta.text;
-        res.write(
-          `data: ${JSON.stringify({ content: event.delta.text })}\n\n`
-        );
+      // Convert tool defs to Anthropic format (without internal _toolId/_serverId)
+      const anthropicTools = mcpToolDefs.map(({ name, description, input_schema }) => ({
+        name,
+        description,
+        input_schema,
+      }));
+
+      // Agentic loop: keep calling Claude until no more tool_use blocks
+      type LoopMsg = { role: "user" | "assistant"; content: unknown };
+      let loopMessages: LoopMsg[] = [...chatMessages];
+      let loopCount = 0;
+      const MAX_LOOPS = 10;
+
+      while (loopCount < MAX_LOOPS) {
+        loopCount++;
+
+        const requestParams: Parameters<typeof anthropic.messages.stream>[0] = {
+          model,
+          max_tokens: 8192,
+          messages: loopMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
+        };
+
+        if (anthropicTools.length > 0) {
+          (requestParams as Record<string, unknown>).tools = anthropicTools;
+        }
+
+        const stream = anthropic.messages.stream(requestParams);
+
+        let currentTextBlock = "";
+        const toolUseBlocks: Array<{
+          id: string;
+          name: string;
+          input: Record<string, unknown>;
+        }> = [];
+
+        let stopReason: string | null = null;
+
+        for await (const event of stream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          ) {
+            currentTextBlock += event.delta.text;
+            fullResponse += event.delta.text;
+            sendEvent({ content: event.delta.text });
+          } else if (event.type === "content_block_start") {
+            if (event.content_block.type === "tool_use") {
+              toolUseBlocks.push({
+                id: event.content_block.id,
+                name: event.content_block.name,
+                input: {},
+              });
+            }
+          } else if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "input_json_delta"
+          ) {
+            const last = toolUseBlocks[toolUseBlocks.length - 1];
+            if (last) {
+              try {
+                const partialJson = (last as { _rawInput?: string })._rawInput ?? "";
+                (last as { _rawInput?: string })._rawInput =
+                  partialJson + event.delta.partial_json;
+              } catch {
+                // ignore
+              }
+            }
+          } else if (event.type === "message_delta") {
+            stopReason = event.delta.stop_reason ?? null;
+          }
+        }
+
+        // Parse accumulated JSON inputs for tool_use blocks
+        for (const block of toolUseBlocks) {
+          const raw = (block as { _rawInput?: string })._rawInput;
+          if (raw) {
+            try {
+              block.input = JSON.parse(raw) as Record<string, unknown>;
+            } catch {
+              block.input = {};
+            }
+          }
+        }
+
+        if (currentTextBlock) {
+          loopMessages.push({ role: "assistant", content: currentTextBlock });
+        }
+
+        // No tool calls → done
+        if (toolUseBlocks.length === 0 || stopReason === "end_turn") {
+          break;
+        }
+
+        // Execute each tool and collect results
+        const toolResults: Array<{
+          type: "tool_result";
+          tool_use_id: string;
+          content: string;
+        }> = [];
+
+        for (const block of toolUseBlocks) {
+          // Parse serverId from tool name format: "{serverId}__{toolName}"
+          const underscoreIdx = block.name.indexOf("__");
+          const serverId = underscoreIdx > 0
+            ? parseInt(block.name.slice(0, underscoreIdx))
+            : null;
+          const rawToolName = underscoreIdx > 0
+            ? block.name.slice(underscoreIdx + 2)
+            : block.name;
+
+          // Notify client that execution is starting
+          sendEvent({
+            tool_execution: {
+              phase: "starting",
+              toolName: rawToolName,
+              serverId,
+            },
+          });
+
+          let servConfig: typeof mcpServers.$inferSelect | null = null;
+          if (serverId) {
+            const [srv] = await db
+              .select()
+              .from(mcpServers)
+              .where(eq(mcpServers.id, serverId));
+            servConfig = srv ?? null;
+          }
+
+          // Create execution record
+          const [execRow] = await db
+            .insert(executions)
+            .values({
+              conversationId: convId,
+              serverId: serverId ?? null,
+              toolName: rawToolName,
+              status: "running",
+              arguments: block.input,
+            })
+            .returning();
+
+          sendEvent({
+            tool_execution: {
+              phase: "running",
+              executionId: execRow.id,
+              toolName: rawToolName,
+              serverId,
+              serverName: servConfig?.name,
+            },
+          });
+
+          const execStart = Date.now();
+          let execResult: { success: boolean; content?: unknown; error?: string };
+
+          if (servConfig) {
+            execResult = await executeMcpTool(
+              {
+                transportType: servConfig.transportType,
+                endpoint: servConfig.endpoint,
+                command: servConfig.command,
+                args: (servConfig.args as string[]) ?? [],
+                authType: servConfig.authType,
+                timeout: servConfig.timeout,
+                retryCount: servConfig.retryCount,
+              },
+              rawToolName,
+              block.input
+            );
+          } else {
+            execResult = { success: false, error: "Server not found" };
+          }
+
+          const durationMs = Date.now() - execStart;
+          const resultText = execResult.success
+            ? JSON.stringify(execResult.content ?? "")
+            : `Error: ${execResult.error ?? "Unknown error"}`;
+
+          // Update execution record
+          await db
+            .update(executions)
+            .set({
+              status: execResult.success ? "success" : "error",
+              completedAt: new Date(),
+              durationMs,
+              resultSummary: resultText.slice(0, 500),
+              rawResult: execResult.content as Record<string, unknown> | null,
+              errorMessage: execResult.error ?? null,
+            })
+            .where(eq(executions.id, execRow.id));
+
+          sendEvent({
+            tool_execution: {
+              phase: "done",
+              executionId: execRow.id,
+              toolName: rawToolName,
+              serverId,
+              serverName: servConfig?.name,
+              success: execResult.success,
+              durationMs,
+            },
+          });
+
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: block.id,
+            content: resultText,
+          });
+        }
+
+        // Add assistant tool_use block and tool results to the message history
+        if (toolUseBlocks.length > 0) {
+          loopMessages.push({
+            role: "assistant",
+            content: toolUseBlocks.map((b) => ({
+              type: "tool_use" as const,
+              id: b.id,
+              name: b.name,
+              input: b.input,
+            })) as unknown as string,
+          });
+          loopMessages.push({
+            role: "user",
+            content: toolResults as unknown as string,
+          });
+        }
+      }
+    } else {
+      // Tool mode: plain streaming without MCP tools
+      const stream = anthropic.messages.stream({
+        model,
+        max_tokens: 8192,
+        messages: chatMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
+      });
+
+      for await (const event of stream) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          fullResponse += event.delta.text;
+          sendEvent({ content: event.delta.text });
+        }
       }
     }
 
@@ -257,12 +604,20 @@ router.post("/conversations/:id/messages", async (req, res) => {
       model,
     });
 
+    // Auto-title: if still default title, derive from first user message
+    const updatePayload: Partial<typeof conversations.$inferInsert> = { updatedAt: new Date() };
+    if (conv.title === "New Conversation") {
+      const userMsg = body.content.trim().replace(/\s+/g, " ");
+      const autoTitle = userMsg.length > 60 ? userMsg.slice(0, 57) + "..." : userMsg;
+      if (autoTitle) updatePayload.title = autoTitle;
+    }
+
     await db
       .update(conversations)
-      .set({ updatedAt: new Date() })
+      .set(updatePayload)
       .where(eq(conversations.id, convId));
 
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    sendEvent({ done: true });
     res.end();
   } catch (err) {
     req.log.error({ err }, "Failed to send message");

@@ -1,32 +1,49 @@
 import { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicMessagesQueryKey } from "@workspace/api-client-react";
+import { getListAnthropicMessagesQueryKey, getListExecutionsQueryKey, getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
+
+export interface LiveToolExecution {
+  phase: "starting" | "running" | "done";
+  executionId?: number;
+  toolName: string;
+  serverId?: number | null;
+  serverName?: string | null;
+  success?: boolean;
+  durationMs?: number;
+}
 
 interface StreamOptions {
   conversationId: number;
   model: string;
+  mode?: string;
   onFinish?: () => void;
   onError?: (err: Error) => void;
 }
 
-export function useChatStream({ conversationId, model, onFinish, onError }: StreamOptions) {
+export function useChatStream({ conversationId, model, mode = "agent", onFinish, onError }: StreamOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
+  const [liveExecutions, setLiveExecutions] = useState<LiveToolExecution[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, attachmentIds?: number[]) => {
     setIsStreaming(true);
     setStreamedText("");
-    
+    setLiveExecutions([]);
+
     abortControllerRef.current = new AbortController();
 
     try {
-      // Optimistically clear the stream text and prepare UI
+      const body: Record<string, unknown> = { content, model, mode };
+      if (attachmentIds && attachmentIds.length > 0) {
+        body.attachmentIds = attachmentIds;
+      }
+
       const response = await fetch(`/api/anthropic/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, model }),
+        body: JSON.stringify(body),
         signal: abortControllerRef.current.signal,
       });
 
@@ -40,67 +57,85 @@ export function useChatStream({ conversationId, model, onFinish, onError }: Stre
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
+      outer: while (true) {
         const { value, done } = await reader.read();
-        
+
         if (done) break;
-        
+
         buffer += decoder.decode(value, { stream: true });
-        
-        // Parse SSE chunks
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6);
-            if (dataStr.trim() === '') continue;
-            
-            try {
-              const data = JSON.parse(dataStr);
-              if (data.done) {
-                // End of stream
-                break;
-              } else if (data.content) {
-                setStreamedText(prev => prev + data.content);
-              }
-            } catch (e) {
-              console.warn("Failed to parse SSE chunk:", dataStr);
+          if (!line.startsWith("data: ")) continue;
+          const dataStr = line.slice(6);
+          if (dataStr.trim() === "") continue;
+
+          try {
+            const data = JSON.parse(dataStr) as Record<string, unknown>;
+
+            if (data.done) {
+              break outer;
+            } else if (data.content) {
+              setStreamedText((prev) => prev + (data.content as string));
+            } else if (data.tool_execution) {
+              const exec = data.tool_execution as LiveToolExecution;
+              setLiveExecutions((prev) => {
+                if (exec.phase === "starting") {
+                  return [...prev, exec];
+                }
+                return prev.map((e) =>
+                  e.toolName === exec.toolName &&
+                  (e.executionId === exec.executionId || exec.executionId == null)
+                    ? { ...e, ...exec }
+                    : e
+                );
+              });
+            } else if (data.error) {
+              console.error("Stream error from server:", data.error);
             }
+          } catch {
+            // ignore parse errors
           }
         }
       }
-      
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
-      if (error.name === 'AbortError') {
-        console.log('Stream aborted');
+      if (error.name === "AbortError") {
+        // User stopped — normal
       } else {
         console.error("Stream error:", error);
         onError?.(error);
       }
     } finally {
       setIsStreaming(false);
-      // Invalidate the messages query to fetch the final persisted message
+      setLiveExecutions([]);
       queryClient.invalidateQueries({
-        queryKey: getListAnthropicMessagesQueryKey(conversationId)
+        queryKey: getListAnthropicMessagesQueryKey(conversationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getListExecutionsQueryKey({ conversationId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getListAnthropicConversationsQueryKey(),
       });
       onFinish?.();
     }
-  }, [conversationId, model, queryClient, onFinish, onError]);
+  }, [conversationId, model, mode, queryClient, onFinish, onError]);
 
   const stopStream = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setIsStreaming(false);
+    setLiveExecutions([]);
   }, []);
 
   return {
     sendMessage,
     stopStream,
     isStreaming,
-    streamedText
+    streamedText,
+    liveExecutions,
   };
 }

@@ -120,6 +120,19 @@ class McpDiscoveryResult(BaseModel):
     prompts: List[McpDiscoveredPrompt] = []
 
 
+class McpExecuteRequest(BaseModel):
+    server: McpServerConfig
+    tool_name: str
+    arguments: Optional[Dict[str, Any]] = {}
+
+
+class McpExecuteResult(BaseModel):
+    success: bool
+    content: Optional[Any] = None
+    error: Optional[str] = None
+    latency_ms: int
+
+
 def _build_http_headers(config: McpServerConfig) -> Dict[str, str]:
     headers: Dict[str, str] = {}
     if config.auth_type == "bearer" and config.auth_secret:
@@ -297,6 +310,55 @@ async def gateway_test(request: Request, config: McpServerConfig):
         raise HTTPException(status_code=400, detail="command required for stdio transport")
 
     return await _test_with_retry(config, timeout_s)
+
+
+@app.post("/gateway/execute", response_model=McpExecuteResult)
+async def gateway_execute(request: Request, body: McpExecuteRequest):
+    require_admin(request, body.server.authorization)
+    config = body.server
+    timeout_s = config.timeout or 30
+
+    if config.transport_type not in ("streamable-http", "stdio"):
+        raise HTTPException(status_code=400, detail=f"Unsupported transport_type: {config.transport_type}")
+
+    start = time.monotonic()
+    try:
+        if config.transport_type == "streamable-http":
+            if not config.endpoint:
+                raise ValueError("endpoint required for streamable-http transport")
+            headers = _build_http_headers(config)
+            async with streamablehttp_client(config.endpoint, headers=headers) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await asyncio.wait_for(session.initialize(), timeout=timeout_s)
+                    result = await asyncio.wait_for(
+                        session.call_tool(body.tool_name, body.arguments or {}),
+                        timeout=timeout_s,
+                    )
+        else:
+            parts = (config.command or "").split()
+            if not parts:
+                raise ValueError("No command specified for stdio transport")
+            cmd, *cmd_args = parts
+            all_args = cmd_args + (config.args or [])
+            server_params = StdioServerParameters(command=cmd, args=all_args)
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await asyncio.wait_for(session.initialize(), timeout=timeout_s)
+                    result = await asyncio.wait_for(
+                        session.call_tool(body.tool_name, body.arguments or {}),
+                        timeout=timeout_s,
+                    )
+
+        latency_ms = int((time.monotonic() - start) * 1000)
+        content = [c.model_dump() if hasattr(c, "model_dump") else str(c) for c in result.content]
+        return McpExecuteResult(success=True, content=content, latency_ms=latency_ms)
+
+    except asyncio.TimeoutError:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return McpExecuteResult(success=False, error="Tool execution timed out", latency_ms=latency_ms)
+    except Exception as exc:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return McpExecuteResult(success=False, error=str(exc), latency_ms=latency_ms)
 
 
 @app.post("/gateway/discover", response_model=McpDiscoveryResult)
