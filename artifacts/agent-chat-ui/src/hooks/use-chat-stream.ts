@@ -102,11 +102,19 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                   const without = prev.filter((e) => e.phase !== "planning");
                   return [...without, exec];
                 }
-                // For running/selecting-server/done: match by executionId if known, else by toolName
-                // This handles the case where "starting" had no executionId yet
+                // For selecting-server/running/done: match by executionId if known, else by toolName.
+                // If no match exists (e.g. Tool Mode which skips planning/starting), insert a new entry.
+                const hasMatch = prev.some((e) => {
+                  const idMatch = exec.executionId != null && e.executionId === exec.executionId;
+                  const nameMatch = exec.toolName != null && e.toolName === exec.toolName && e.executionId == null;
+                  return idMatch || nameMatch;
+                });
+                if (!hasMatch) {
+                  return [...prev, exec];
+                }
                 return prev.map((e) => {
                   const idMatch = exec.executionId != null && e.executionId === exec.executionId;
-                  const nameMatch = e.toolName === exec.toolName && e.executionId == null;
+                  const nameMatch = exec.toolName != null && e.toolName === exec.toolName && e.executionId == null;
                   return (idMatch || nameMatch) ? { ...e, ...exec } : e;
                 });
               });

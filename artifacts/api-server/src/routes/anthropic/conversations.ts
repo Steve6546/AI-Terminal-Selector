@@ -207,41 +207,26 @@ async function buildAnthropicTools(
     _serverId: number;
   }>
 > {
-  const toolRows = serverIds?.length
-    ? await db
-        .select({
-          id: mcpTools.id,
-          serverId: mcpTools.serverId,
-          toolName: mcpTools.toolName,
-          description: mcpTools.description,
-          inputSchema: mcpTools.inputSchema,
-        })
-        .from(mcpTools)
-        .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
-        .where(
-          and(
-            eq(mcpTools.enabled, true),
-            eq(mcpServers.enabled, true),
-            eq(mcpServers.status, "connected")
-          )
-        )
-    : await db
-        .select({
-          id: mcpTools.id,
-          serverId: mcpTools.serverId,
-          toolName: mcpTools.toolName,
-          description: mcpTools.description,
-          inputSchema: mcpTools.inputSchema,
-        })
-        .from(mcpTools)
-        .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
-        .where(
-          and(
-            eq(mcpTools.enabled, true),
-            eq(mcpServers.enabled, true),
-            eq(mcpServers.status, "connected")
-          )
-        );
+  const baseConditions = and(
+    eq(mcpTools.enabled, true),
+    eq(mcpServers.enabled, true),
+    eq(mcpServers.status, "connected")
+  );
+  const toolRows = await db
+    .select({
+      id: mcpTools.id,
+      serverId: mcpTools.serverId,
+      toolName: mcpTools.toolName,
+      description: mcpTools.description,
+      inputSchema: mcpTools.inputSchema,
+    })
+    .from(mcpTools)
+    .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
+    .where(
+      serverIds?.length
+        ? and(baseConditions, inArray(mcpTools.serverId, serverIds))
+        : baseConditions
+    );
 
   return toolRows.map((t) => ({
     name: `${t.serverId}__${t.toolName}`,
