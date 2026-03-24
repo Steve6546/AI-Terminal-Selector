@@ -69,7 +69,37 @@ class ToolExecutor:
         server = self._server_map.get(server_id) if server_id else None
         tool_def = self._tool_map.get(namespaced_name)
 
-        requires_approval = tool_def.requires_approval if tool_def else False
+        if not tool_def:
+            error_msg = f"Tool '{namespaced_name}' is not in the allowed tool list"
+            logger.warning("tool_not_allowed", tool=namespaced_name)
+            self._emit(RunEvent(
+                type=EventType.TOOL_COMPLETED,
+                run_id=self._run_id,
+                data={
+                    "tool_id": tool_id,
+                    "success": False,
+                    "duration_ms": 0,
+                    "error": error_msg,
+                },
+            ))
+            return ToolExecutionResult(success=False, error=error_msg)
+
+        if not server:
+            error_msg = f"Server not found for tool '{namespaced_name}'"
+            logger.warning("server_not_found_for_tool", tool=namespaced_name, server_id=server_id)
+            self._emit(RunEvent(
+                type=EventType.TOOL_COMPLETED,
+                run_id=self._run_id,
+                data={
+                    "tool_id": tool_id,
+                    "success": False,
+                    "duration_ms": 0,
+                    "error": error_msg,
+                },
+            ))
+            return ToolExecutionResult(success=False, error=error_msg)
+
+        requires_approval = tool_def.requires_approval
 
         tc_record = await db_client.persist_tool_call(
             run_db_id=self._run_db_id,
@@ -158,12 +188,6 @@ class ToolExecutor:
         exec_id = exec_record.get("id") if exec_record else None
 
         start = time.monotonic()
-
-        if not server:
-            duration_ms = int((time.monotonic() - start) * 1000)
-            error_msg = "Server not found"
-            await self._finalize_execution(exec_id, tc_id, tool_id, False, None, error_msg, duration_ms)
-            return ToolExecutionResult(success=False, error=error_msg, duration_ms=duration_ms, execution_id=exec_id)
 
         mcp_config = McpServerConfig(
             transport_type=server.transport_type,

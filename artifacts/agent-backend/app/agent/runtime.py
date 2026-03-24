@@ -137,6 +137,14 @@ class AgentRuntime:
         if not request.selected_server_id or not request.selected_tool_name:
             raise RuntimeError("Tool mode requires selected_server_id and selected_tool_name")
 
+        namespaced = f"{request.selected_server_id}__{request.selected_tool_name}"
+        allowed_names = {t.name for t in request.tools}
+        if namespaced not in allowed_names:
+            raise RuntimeError(
+                f"Tool '{request.selected_tool_name}' on server {request.selected_server_id} "
+                "is not enabled or does not exist"
+            )
+
         tool_executor = ToolExecutor(
             run_id=state.run_id,
             run_db_id=state.run_db_id,
