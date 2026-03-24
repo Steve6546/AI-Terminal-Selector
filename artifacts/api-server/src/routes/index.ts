@@ -16,6 +16,11 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(conversationsRouter);
+
+router.use("/anthropic/*path", (req, res) => {
+  const newPath = `/api/conversations/${req.params.path}`;
+  res.redirect(308, newPath);
+});
 router.use(mcpRouter);
 router.use(toolExecuteRouter);
 router.use("/system", systemRouter);
