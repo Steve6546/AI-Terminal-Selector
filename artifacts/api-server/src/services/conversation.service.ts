@@ -269,7 +269,7 @@ type MsgParam = {
 export async function prepareSendMessage(
   convId: number,
   content: string,
-  model: string,
+  model: string | undefined,
   attachmentIds: number[],
 ) {
   const [conv] = await db

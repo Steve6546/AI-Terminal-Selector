@@ -77,7 +77,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
     const mode = rawBody.mode ?? "agent";
     const attachmentIds: number[] = Array.isArray(rawBody.attachmentIds) ? (rawBody.attachmentIds as unknown[]).filter((id): id is number => typeof id === "number") : [];
 
-    const prepared = await conversationService.prepareSendMessage(convId, body.content, body.model ?? "", attachmentIds);
+    const prepared = await conversationService.prepareSendMessage(convId, body.content, body.model || undefined, attachmentIds);
     if (!prepared) { res.status(404).json({ error: "Conversation not found" }); return; }
 
     const mcpToolDefs = await providerService.buildToolDefinitions();

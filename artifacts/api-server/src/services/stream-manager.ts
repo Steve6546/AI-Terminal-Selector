@@ -1,5 +1,7 @@
 import type { Response } from "express";
 import { serverStatusEmitter, type ServerStatusEvent } from "../lib/server-status-emitter";
+import * as systemService from "./system.service";
+import { logger } from "../lib/logger";
 
 type StreamEventType = "server_status" | "system_status" | "agent_event" | "health";
 
@@ -12,10 +14,12 @@ interface StreamClient {
 class StreamManager {
   private clients = new Map<string, StreamClient>();
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private systemStatusInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     serverStatusEmitter.on("status", (event: ServerStatusEvent) => {
       this.broadcast("server_status", event);
+      this.broadcast("health", { type: "server_health", ...event });
     });
 
     this.heartbeatInterval = setInterval(() => {
@@ -26,6 +30,13 @@ class StreamManager {
           this.removeClient(client.id);
         }
       }
+    }, 30_000);
+
+    this.systemStatusInterval = setInterval(() => {
+      if (this.clients.size === 0) return;
+      systemService.getSystemStatus()
+        .then((status) => this.broadcast("system_status", status))
+        .catch((err) => logger.debug({ err }, "Failed to broadcast system status"));
     }, 30_000);
   }
 
@@ -72,6 +83,10 @@ class StreamManager {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
+    }
+    if (this.systemStatusInterval) {
+      clearInterval(this.systemStatusInterval);
+      this.systemStatusInterval = null;
     }
     this.clients.clear();
   }
