@@ -5,6 +5,7 @@ import { handleRouteError } from "../lib/handle-error";
 import * as runService from "../services/run.service";
 import * as approvalService from "../services/approval.service";
 import { recordToolExecution } from "../services/metrics.service";
+import { writeAuditEvent } from "../services/audit.service";
 
 const router: IRouter = Router();
 
@@ -53,7 +54,7 @@ router.post("/internal/tool-calls", async (req, res) => {
 router.patch("/internal/tool-calls/:id", async (req, res) => {
   try {
     const tcId = parseInt(req.params.id);
-    const data = req.body as { toolName?: string; status?: string; durationMs?: number };
+    const data = req.body as { toolName?: string; status?: string; durationMs?: number; runId?: number };
     await runService.updateToolCall(tcId, req.body);
     if (data.status === "success" || data.status === "error") {
       let toolName = data.toolName;
@@ -64,6 +65,13 @@ router.patch("/internal/tool-calls/:id", async (req, res) => {
       if (toolName) {
         recordToolExecution(toolName, data.status === "success", data.durationMs ?? 0);
       }
+      writeAuditEvent({
+        eventType: `tool_call.${data.status}`,
+        entityType: "tool_call",
+        entityId: tcId,
+        traceId: req.traceId,
+        metadata: { toolName, durationMs: data.durationMs, runId: data.runId },
+      });
     }
     res.json({ ok: true });
   } catch (err) {
@@ -85,6 +93,13 @@ router.post("/internal/approvals", async (req, res) => {
 router.post("/internal/executions", async (req, res) => {
   try {
     const result = await runService.createExecution(req.body);
+    writeAuditEvent({
+      eventType: "execution.created",
+      entityType: "execution",
+      entityId: result.id,
+      traceId: req.traceId,
+      metadata: { toolName: req.body.toolName, conversationId: req.body.conversationId },
+    });
     res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create execution");
