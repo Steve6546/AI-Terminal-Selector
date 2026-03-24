@@ -15,7 +15,7 @@
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **Frontend**: React + Vite + Tailwind CSS v4 + shadcn/ui
+- **Frontend**: React + Next.js 15 App Router + Tailwind CSS v4 + shadcn/ui
 - **AI**: Replit Anthropic Integration (claude-sonnet-4-6, claude-opus-4-6)
 
 ## Key Features
@@ -61,7 +61,7 @@ artifacts/
 │   │   ├── config.py   # Settings via pydantic-settings
 │   │   └── main.py     # FastAPI app entry point
 │   └── main.py         # uvicorn runner
-└── agent-chat-ui/      # React + Vite frontend (port from $PORT)
+└── agent-chat-ui/      # React + Next.js 15 App Router frontend (port from $PORT)
 lib/
 ├── api-spec/           # OpenAPI spec + Orval codegen config
 ├── api-client-react/   # Generated React Query hooks

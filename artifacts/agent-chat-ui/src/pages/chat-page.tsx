@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, Zap, Code, TerminalSquare, AlertTriangle, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
 import {
   Sheet,
   SheetContent,
@@ -98,8 +97,8 @@ function ErrorBanner({ error, onDismiss }: { error: Error; onDismiss: () => void
 }
 
 export default function ChatPage() {
-  const params = useParams();
-  const [, setLocation] = useLocation();
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
   const conversationId = params.id ? parseInt(params.id) : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -203,14 +202,14 @@ export default function ChatPage() {
         {
           onSuccess: (data) => {
             setPendingMessage({ text, attachmentIds, toolParams });
-            setLocation(`/c/${data.id}`);
+            router.push(`/c/${data.id}`);
           }
         }
       );
       return;
     }
     sendMessage(text, attachmentIds, toolParams);
-  }, [conversationId, createMutation, sendMessage, setLocation]);
+  }, [conversationId, createMutation, sendMessage, router]);
 
   const handleRetry = useCallback((assistantMessageId: number, retryModel: string) => {
     if (!conversationId || isStreaming) return;
@@ -272,7 +271,7 @@ export default function ChatPage() {
               >
                 <div className="absolute inset-0 bg-primary/20 blur-[60px] rounded-full" />
                 <img
-                  src={`${import.meta.env.BASE_URL}images/empty-state-orb.png`}
+                  src="/images/empty-state-orb.png"
                   alt="AI Orb"
                   className="w-48 h-48 object-cover rounded-full shadow-2xl relative z-10 animate-float"
                 />

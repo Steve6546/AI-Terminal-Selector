@@ -3,7 +3,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { X, Maximize2, Minimize2, Terminal as TerminalIcon, FileOutput, AlertCircle, Trash2, Copy, Check } from "lucide-react";
-import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 
 type Tab = "shell" | "output" | "errors";

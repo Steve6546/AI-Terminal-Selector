@@ -1,9 +1,9 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
-import { useLocation } from "wouter";
+import { useRouter } from "next/navigation";
 
 export default function TerminalPage() {
-  const [, setLocation] = useLocation();
+  const router = useRouter();
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
@@ -16,7 +16,7 @@ export default function TerminalPage() {
           </p>
         </div>
         <div className="flex-1 overflow-hidden">
-          <TerminalPanel onClose={() => setLocation("/")} />
+          <TerminalPanel onClose={() => router.push("/")} />
         </div>
       </main>
     </div>

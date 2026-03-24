@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useRouter } from "next/navigation";
 import {
   useGetMcpServer,
   useTestMcpServerConnection,
@@ -139,7 +139,7 @@ export { getToolRisk, RiskBadge, RiskSummaryInline };
 
 export default function McpServerDetailPage() {
   const params = useParams<{ id: string }>();
-  const [, setLocation] = useLocation();
+  const router = useRouter();
   const serverId = params?.id ? parseInt(params.id) : 0;
   const queryClient = useQueryClient();
   const { getLiveStatus } = useMcpHealth();
@@ -161,7 +161,7 @@ export default function McpServerDetailPage() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <h2 className="text-xl font-bold text-white mb-2">Server not found</h2>
-          <button onClick={() => setLocation("/servers")} className="text-primary hover:underline text-sm">
+          <button onClick={() => router.push("/servers")} className="text-primary hover:underline text-sm">
             Back to servers
           </button>
         </div>
@@ -229,7 +229,7 @@ export default function McpServerDetailPage() {
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-4xl mx-auto">
           <button
-            onClick={() => setLocation("/servers")}
+            onClick={() => router.push("/servers")}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white transition-colors mb-6 group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />

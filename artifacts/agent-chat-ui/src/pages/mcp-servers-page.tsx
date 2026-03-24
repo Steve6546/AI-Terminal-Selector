@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useLocation } from "wouter";
+import { useRouter } from "next/navigation";
 import {
   useListMcpServers,
   useCreateMcpServer,
@@ -629,7 +629,7 @@ export default function McpServersPage() {
   const { data: servers, isLoading } = useListMcpServers();
   const deleteMutation = useDeleteMcpServer();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const router = useRouter();
   const { getLiveStatus } = useMcpHealth();
 
   const [showFormDialog, setShowFormDialog] = useState(false);
@@ -672,7 +672,7 @@ export default function McpServersPage() {
         <div className="max-w-5xl mx-auto">
           {/* Back button */}
           <button
-            onClick={() => setLocation("/")}
+            onClick={() => router.push("/")}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white transition-colors mb-6 group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
@@ -737,7 +737,7 @@ export default function McpServersPage() {
                   key={server.id}
                   server={server}
                   liveStatus={getLiveStatus(server.id)}
-                  onClick={() => setLocation(`/servers/${server.id}`)}
+                  onClick={() => router.push(`/servers/${server.id}`)}
                   onEdit={(e) => {
                     e.stopPropagation();
                     setEditingServer(server);

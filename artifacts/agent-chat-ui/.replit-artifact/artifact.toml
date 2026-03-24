@@ -19,13 +19,7 @@ run = "pnpm --filter @workspace/agent-chat-ui run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/agent-chat-ui", "run", "build" ]
-publicDir = "artifacts/agent-chat-ui/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+run = "pnpm --filter @workspace/agent-chat-ui run start"
 
 [services.env]
 PORT = "22203"
-BASE_PATH = "/"

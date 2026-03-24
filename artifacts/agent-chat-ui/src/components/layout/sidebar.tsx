@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { 
   MessageSquare, Plus, Search, MoreHorizontal, 
@@ -74,7 +75,8 @@ function AnimatedTitle({ title, isActive }: { title: string; isActive: boolean }
 }
 
 export function Sidebar() {
-  const [location, setLocation] = useLocation();
+  const location = usePathname();
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -114,7 +116,7 @@ export function Sidebar() {
       { data: { title: "New Conversation" } },
       {
         onSuccess: (data) => {
-          setLocation(`/c/${data.id}`);
+          router.push(`/c/${data.id}`);
         }
       }
     );
@@ -125,7 +127,7 @@ export function Sidebar() {
     e.stopPropagation();
     deleteMutation.mutate({ id }, {
       onSuccess: () => {
-        if (location === `/c/${id}`) setLocation("/");
+        if (location === `/c/${id}`) router.push("/");
         invalidate();
       }
     });
@@ -179,7 +181,7 @@ export function Sidebar() {
     duplicateMutation.mutate({ id }, {
       onSuccess: (data) => {
         invalidate();
-        setLocation(`/c/${data.id}`);
+        router.push(`/c/${data.id}`);
       }
     });
   };

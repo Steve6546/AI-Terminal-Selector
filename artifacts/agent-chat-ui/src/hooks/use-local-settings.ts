@@ -12,9 +12,14 @@ export const AVAILABLE_MODELS: { id: ModelId; label: string }[] = [
 
 export type InteractionMode = "agent" | "tool";
 
+function safeGetItem(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(key);
+}
+
 export function useLocalSettings() {
   const [model, setModel] = useState<ModelId>(() => {
-    const saved = localStorage.getItem(MODEL_KEY);
+    const saved = safeGetItem(MODEL_KEY);
     if (saved === "claude-opus-4-6" || saved === "claude-sonnet-4-6") {
       return saved as ModelId;
     }
@@ -26,9 +31,8 @@ export function useLocalSettings() {
   }, [model]);
 
   const [mode, setMode] = useState<InteractionMode>(() => {
-    const saved = localStorage.getItem(MODE_KEY);
+    const saved = safeGetItem(MODE_KEY);
     if (saved === "agent" || saved === "tool") return saved;
-    // Migrate old capitalized values
     if (saved === "Agent") return "agent";
     if (saved === "Tool") return "tool";
     return "agent";

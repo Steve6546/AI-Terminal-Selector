@@ -12,8 +12,7 @@ let _refCount = 0;
 
 function ensureStream() {
   if (_eventSource) return;
-  const base = import.meta.env.BASE_URL ?? "/";
-  _eventSource = new EventSource(`${base}api/system/status/events`);
+  _eventSource = new EventSource(`/api/system/status/events`);
 
   const eventTypes: StreamEventType[] = ["server_status", "system_status", "agent_event", "health"];
   for (const et of eventTypes) {

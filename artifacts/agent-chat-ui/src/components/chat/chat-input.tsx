@@ -4,7 +4,7 @@ import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench,
 import { InteractionMode } from "@/hooks/use-local-settings";
 import { cn } from "@/lib/utils";
 import { useListMcpServers, useListMcpTools } from "@workspace/api-client-react";
-import { useLocation } from "wouter";
+import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,7 +66,7 @@ async function uploadFile(
 }
 
 export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, conversationId }: ChatInputProps) {
-  const [, navigate] = useLocation();
+  const router = useRouter();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -406,7 +406,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
               <DropdownMenuLabel className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Connectors</DropdownMenuLabel>
               <DropdownMenuItem
                 className="gap-3 py-2 cursor-pointer"
-                onClick={() => navigate("/settings?tab=databases")}
+                onClick={() => router.push("/settings?tab=databases")}
               >
                 <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
                   <Database className="w-4 h-4 text-blue-400" />
@@ -418,7 +418,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="gap-3 py-2 cursor-pointer"
-                onClick={() => navigate("/settings?tab=mcp-servers")}
+                onClick={() => router.push("/settings?tab=mcp-servers")}
               >
                 <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center">
                   <Server className="w-4 h-4 text-green-400" />
@@ -430,7 +430,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="gap-3 py-2 cursor-pointer"
-                onClick={() => navigate("/settings")}
+                onClick={() => router.push("/settings")}
               >
                 <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center">
                   <Settings className="w-4 h-4 text-muted-foreground" />

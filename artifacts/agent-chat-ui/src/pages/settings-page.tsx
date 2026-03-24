@@ -34,7 +34,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useSearch } from "wouter";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 const TABS = [
   { id: "general", label: "General", icon: Settings },
@@ -1086,21 +1087,19 @@ function UISettingsTab({
 }
 
 export default function SettingsPage() {
-  const searchString = useSearch();
+  const searchParams = useSearchParams();
   const initialTab = (() => {
-    const params = new URLSearchParams(searchString);
-    const tab = params.get("tab");
+    const tab = searchParams.get("tab");
     return tab && TABS.some((t) => t.id === tab) ? tab : "general";
   })();
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchString);
-    const tab = params.get("tab");
+    const tab = searchParams.get("tab");
     if (tab && TABS.some((t) => t.id === tab)) {
       setActiveTab(tab);
     }
-  }, [searchString]);
+  }, [searchParams]);
 
   const { data: settings, isLoading } = useGetSettings();
   const updateSettings = useUpdateSettings();
