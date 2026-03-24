@@ -184,6 +184,24 @@ router.post("/internal/executions", async (req, res) => {
   }
 });
 
+router.post("/internal/run-events", async (req, res) => {
+  try {
+    const { runId, eventType, data } = req.body;
+    const [row] = await db
+      .insert(runEvents)
+      .values({
+        runId,
+        eventType,
+        data: data || null,
+      })
+      .returning();
+    res.status(201).json({ id: row.id });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create run event");
+    handleRouteError(res, err, "Internal server error");
+  }
+});
+
 router.patch("/internal/executions/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);

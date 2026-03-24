@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import structlog
 
@@ -63,6 +63,15 @@ class ProviderRouter:
             if provider:
                 return model
         return None
+
+    def get_provider_for_task(self, task_type: str = "general") -> Optional[Tuple[BaseProvider, str]]:
+        model = self.select_model_for_task(task_type)
+        if not model:
+            return None
+        provider = self.get_provider_for_model(model)
+        if not provider:
+            return None
+        return (provider, model)
 
     def get_available_providers(self) -> list[str]:
         return [name for name, p in self._providers.items() if p.is_available()]

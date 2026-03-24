@@ -57,6 +57,27 @@ async def update_run(
         logger.warning("update_run_failed", run_id=run_id, error=str(exc))
 
 
+async def persist_run_event(
+    run_db_id: Optional[int],
+    event_type: str,
+    data: Optional[Dict[str, Any]] = None,
+) -> None:
+    if not run_db_id:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{API_BASE}/api/internal/run-events",
+                json={
+                    "runId": run_db_id,
+                    "eventType": event_type,
+                    "data": data,
+                },
+            )
+    except Exception as exc:
+        logger.warning("persist_run_event_failed", event_type=event_type, error=str(exc))
+
+
 async def persist_tool_call(
     run_db_id: Optional[int],
     server_id: Optional[int],

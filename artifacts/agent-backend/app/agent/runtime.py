@@ -40,6 +40,10 @@ AGENT_SYSTEM_PROMPT = """You are an expert AI agent with access to MCP (Model Co
 - Keep your reasoning transparent — briefly explain why you are choosing each tool."""
 
 
+SUMMARY_THRESHOLD = 20
+RECENT_MESSAGES_TO_KEEP = 8
+
+
 class AgentRuntime:
     def __init__(self, provider_router: ProviderRouter):
         self._router = provider_router
@@ -71,15 +75,22 @@ class AgentRuntime:
         )
         run_db_id = run_record.get("id") if run_record else None
 
+        await db_client.persist_run_event(run_db_id, "run.created", {
+            "conversation_id": request.conversation_id,
+            "model": model,
+            "mode": mode.value,
+        })
+
         try:
             if mode == AgentMode.TOOL:
                 full_response = await self._run_tool_mode(request, run_id, run_db_id, emit)
             elif mode == AgentMode.AGENT:
                 full_response = await self._run_agent_mode(request, run_id, run_db_id, model, emit)
             else:
-                full_response = await self._run_chat_mode(request, run_id, model, emit)
+                full_response = await self._run_chat_mode(request, run_id, run_db_id, model, emit)
 
             await db_client.update_run(run_id, status=RunStatus.COMPLETED.value)
+            await db_client.persist_run_event(run_db_id, "run.completed")
             emit(RunEvent(type=EventType.RUN_COMPLETED, run_id=run_id))
             return full_response
 
@@ -87,23 +98,80 @@ class AgentRuntime:
             error_msg = str(exc)
             logger.error("agent_run_failed", run_id=run_id, error=error_msg)
             await db_client.update_run(run_id, status=RunStatus.FAILED.value, error_message=error_msg)
+            await db_client.persist_run_event(run_db_id, "run.failed", {"error": error_msg})
             emit(RunEvent(type=EventType.RUN_FAILED, run_id=run_id, data={"error": error_msg}))
             return ""
+
+    async def _summarize_history(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if len(messages) <= SUMMARY_THRESHOLD:
+            return messages
+
+        older = messages[:-RECENT_MESSAGES_TO_KEEP]
+        recent = messages[-RECENT_MESSAGES_TO_KEEP:]
+
+        transcript_parts = []
+        for m in older:
+            role_label = "User" if m.get("role") == "user" else "Assistant"
+            content = m.get("content", "")
+            if isinstance(content, str):
+                text = content[:500]
+            elif isinstance(content, list):
+                text = " ".join(
+                    b.get("text", "")[:200]
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            else:
+                text = str(content)[:500]
+            transcript_parts.append(f"{role_label}: {text}")
+
+        transcript = "\n\n".join(transcript_parts)
+
+        try:
+            summary_provider = self._router.get_provider_for_task("fast")
+            if not summary_provider:
+                return messages
+            provider, summary_model = summary_provider
+            result = await provider.complete(
+                model=summary_model,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        "Summarize the following conversation history into a concise paragraph "
+                        "(max 300 words) that captures the key topics, decisions, and context "
+                        f"needed to continue the conversation:\n\n{transcript}\n\nSummary:"
+                    ),
+                }],
+                max_tokens=512,
+            )
+            if result.text.strip():
+                return [
+                    {"role": "user", "content": f"[Earlier conversation summary: {result.text.strip()}]"},
+                    {"role": "assistant", "content": "Understood, I'll keep that context in mind."},
+                    *recent,
+                ]
+        except Exception as exc:
+            logger.warning("summarization_failed", error=str(exc))
+
+        return messages
 
     async def _run_chat_mode(
         self,
         request: ChatRequest,
         run_id: str,
+        run_db_id: Optional[int],
         model: str,
         emit: Callable[[RunEvent], None],
     ) -> str:
         emit(RunEvent(type=EventType.MODEL_STARTED, run_id=run_id))
+        await db_client.persist_run_event(run_db_id, "model.started")
 
         provider = self._router.get_provider_for_model(model)
         if not provider:
             raise RuntimeError(f"No provider available for model {model}")
 
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        messages = await self._summarize_history(messages)
         full_response = ""
 
         async for chunk in provider.stream_completion(model=model, messages=messages, max_tokens=8192):
@@ -113,6 +181,7 @@ class AgentRuntime:
             elif chunk.chunk_type == "error":
                 raise RuntimeError(chunk.content)
 
+        await db_client.persist_run_event(run_db_id, "text.completed", {"length": len(full_response)})
         return full_response
 
     async def _run_tool_mode(
@@ -123,6 +192,7 @@ class AgentRuntime:
         emit: Callable[[RunEvent], None],
     ) -> str:
         emit(RunEvent(type=EventType.MODEL_STARTED, run_id=run_id))
+        await db_client.persist_run_event(run_db_id, "model.started")
 
         if not request.selected_server_id or not request.selected_tool_name:
             raise RuntimeError("Tool mode requires selected_server_id and selected_tool_name")
@@ -163,6 +233,7 @@ class AgentRuntime:
         emit: Callable[[RunEvent], None],
     ) -> str:
         emit(RunEvent(type=EventType.MODEL_STARTED, run_id=run_id))
+        await db_client.persist_run_event(run_db_id, "model.started")
 
         provider = self._router.get_provider_for_model(model)
         if not provider:
@@ -183,6 +254,7 @@ class AgentRuntime:
         ]
 
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        messages = await self._summarize_history(messages)
 
         system_prompt = request.system_prompt or AGENT_SYSTEM_PROMPT
 
