@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { subscribeToStream } from "./use-shared-stream";
 
 export type McpLiveStatus =
   | "checking"
@@ -21,32 +22,22 @@ type HealthMap = Record<number, McpServerLiveHealth>;
 
 let _sharedMap: HealthMap = {};
 const _listeners = new Set<(map: HealthMap) => void>();
-let _eventSource: EventSource | null = null;
+let _unsub: (() => void) | null = null;
 let _refCount = 0;
 
 function startSharedStream() {
-  if (_eventSource) return;
-  _eventSource = new EventSource("/api/system/status/events");
-
-  _eventSource.addEventListener("server_status", (e: MessageEvent<string>) => {
-    try {
-      const data = JSON.parse(e.data) as McpServerLiveHealth;
-      _sharedMap = { ..._sharedMap, [data.serverId]: data };
-      _listeners.forEach((fn) => fn(_sharedMap));
-    } catch {
-      // ignore parse errors
-    }
+  if (_unsub) return;
+  _unsub = subscribeToStream("server_status", (raw) => {
+    const data = raw as McpServerLiveHealth;
+    _sharedMap = { ..._sharedMap, [data.serverId]: data };
+    _listeners.forEach((fn) => fn(_sharedMap));
   });
-
-  _eventSource.onerror = () => {
-    // SSE auto-reconnects; nothing to do
-  };
 }
 
 function stopSharedStream() {
-  if (_eventSource) {
-    _eventSource.close();
-    _eventSource = null;
+  if (_unsub) {
+    _unsub();
+    _unsub = null;
   }
   _sharedMap = {};
 }
@@ -61,7 +52,6 @@ export function useMcpHealth() {
     _refCount++;
 
     if (_refCount === 1) startSharedStream();
-    // Sync initial state
     setHealthMap({ ..._sharedMap });
 
     return () => {

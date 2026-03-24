@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, toolCalls } from "@workspace/db";
 import { handleRouteError } from "../lib/handle-error";
 import * as runService from "../services/run.service";
+import * as approvalService from "../services/approval.service";
 import { recordToolExecution } from "../services/metrics.service";
 
 const router: IRouter = Router();
@@ -73,7 +74,7 @@ router.patch("/internal/tool-calls/:id", async (req, res) => {
 
 router.post("/internal/approvals", async (req, res) => {
   try {
-    const result = await runService.createApproval(req.body);
+    const result = await approvalService.createApproval(req.body);
     res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create approval");

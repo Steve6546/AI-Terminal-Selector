@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { settings } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { logger } from "../lib/logger";
 
 const defaultSettings: Record<string, unknown> = {
   agentName: "Agent",
@@ -14,6 +15,7 @@ const defaultSettings: Record<string, unknown> = {
   developerMode: false,
   showTimeline: true,
   showTechnicalDetails: false,
+  debugLogging: false,
 };
 
 async function buildSettingsMap(): Promise<Record<string, unknown>> {
@@ -47,6 +49,12 @@ export async function updateSettings(
     } else {
       await db.insert(settings).values({ key, valueJson });
     }
+  }
+
+  if ("debugLogging" in body) {
+    const level = body.debugLogging ? "debug" : "info";
+    logger.level = level;
+    logger.info({ debugLogging: body.debugLogging, level }, "Log level changed");
   }
 
   const settingsMap = await buildSettingsMap();

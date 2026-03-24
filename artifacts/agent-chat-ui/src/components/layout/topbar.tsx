@@ -2,6 +2,7 @@ import { SettingsMapDefaultModel, useGetSystemStatus } from "@workspace/api-clie
 import { Zap, TerminalSquare, Wifi, WifiOff } from "lucide-react";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { subscribeToStream } from "@/hooks/use-shared-stream";
 import {
   Select,
   SelectContent,
@@ -24,18 +25,9 @@ export function TopBar({ model, onModelChange, onTerminalToggle }: TopBarProps) 
   // Subscribe to real-time health-check events from the server so the UI
   // updates immediately when an MCP server's status changes (no 30s poll wait).
   useEffect(() => {
-    const es = new EventSource("/api/system/status/events");
-
-    es.addEventListener("server_status", () => {
-      // Invalidate system-status query so it refetches the latest aggregate counts
+    return subscribeToStream("server_status", () => {
       queryClient.invalidateQueries({ queryKey: ["system-status"] });
     });
-
-    es.onerror = () => {
-      // Connection dropped — browser will auto-reconnect; no action needed
-    };
-
-    return () => es.close();
   }, [queryClient]);
 
   const connected = status?.connectedServers ?? 0;
