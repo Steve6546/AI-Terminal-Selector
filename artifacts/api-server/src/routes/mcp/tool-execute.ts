@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { handleRouteError } from "../../lib/handle-error";
 import * as executionService from "../../services/execution.service";
 import { writeAuditEvent } from "../../services/audit.service";
+import { recordToolExecution } from "../../services/metrics.service";
 
 const router: IRouter = Router();
 
@@ -29,15 +30,18 @@ router.post("/mcp-tools/:toolId/execute", async (req, res) => {
       return;
     }
 
+    const exec = result.execution!;
+    recordToolExecution(exec.toolName, exec.status === "success", exec.durationMs ?? 0);
+
     await writeAuditEvent({
       eventType: "tool.executed",
       entityType: "execution",
-      entityId: result.execution!.id,
-      details: { toolName: result.execution!.toolName, status: result.execution!.status },
+      entityId: exec.id,
+      details: { toolName: exec.toolName, status: exec.status },
       traceId: req.traceId,
     });
 
-    res.json(result.execution);
+    res.json(exec);
   } catch (err) {
     req.log.error({ err, traceId: req.traceId }, "Failed to execute tool");
     handleRouteError(res, err, "Tool execution failed");

@@ -1,3 +1,7 @@
+import { db } from "@workspace/db";
+import { auditEvents } from "@workspace/db";
+import { logger } from "../lib/logger";
+
 interface ToolMetrics {
   executionCount: number;
   successCount: number;
@@ -7,6 +11,8 @@ interface ToolMetrics {
 }
 
 const toolMetricsMap = new Map<string, ToolMetrics>();
+let flushTimer: NodeJS.Timeout | null = null;
+const FLUSH_INTERVAL_MS = 60_000;
 
 export function recordToolExecution(
   toolName: string,
@@ -60,4 +66,34 @@ export function getToolMetrics(): Record<
 
 export function resetToolMetrics(): void {
   toolMetricsMap.clear();
+}
+
+export async function flushMetricsToDb(): Promise<void> {
+  if (toolMetricsMap.size === 0) return;
+  try {
+    const snapshot = getToolMetrics();
+    await db.insert(auditEvents).values({
+      eventType: "metrics.flush",
+      entityType: "system",
+      actor: "system",
+      details: snapshot,
+    });
+    logger.debug({ toolCount: Object.keys(snapshot).length }, "Flushed tool metrics to DB");
+  } catch (err) {
+    logger.warn({ err }, "Failed to flush metrics to DB");
+  }
+}
+
+export function startPeriodicFlush(): void {
+  if (flushTimer) return;
+  flushTimer = setInterval(() => {
+    flushMetricsToDb().catch(() => {});
+  }, FLUSH_INTERVAL_MS);
+}
+
+export function stopPeriodicFlush(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
 }

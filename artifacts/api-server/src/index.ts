@@ -3,6 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { attachTerminalServer } from "./lib/terminal-server";
 import { startHealthCheckJob } from "./lib/health-check-job";
+import { startPeriodicFlush } from "./services/metrics.service";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +25,7 @@ attachTerminalServer(server);
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
   startHealthCheckJob();
+  startPeriodicFlush();
 });
 
 server.on("error", (err) => {

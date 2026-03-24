@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { handleRouteError } from "../lib/handle-error";
 import * as runService from "../services/run.service";
+import { recordToolExecution } from "../services/metrics.service";
 
 const router: IRouter = Router();
 
@@ -48,7 +49,11 @@ router.post("/internal/tool-calls", async (req, res) => {
 
 router.patch("/internal/tool-calls/:id", async (req, res) => {
   try {
+    const data = req.body as { toolName?: string; status?: string; durationMs?: number };
     await runService.updateToolCall(parseInt(req.params.id), req.body);
+    if (data.toolName && (data.status === "success" || data.status === "error")) {
+      recordToolExecution(data.toolName, data.status === "success", data.durationMs ?? 0);
+    }
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Failed to update tool call");

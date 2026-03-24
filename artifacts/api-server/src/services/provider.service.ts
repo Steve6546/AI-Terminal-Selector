@@ -62,10 +62,12 @@ export async function buildServerInfos() {
   return result;
 }
 
-export async function forwardApproval(runId: string, toolId: string, approved: boolean) {
+export async function forwardApproval(runId: string, toolId: string, approved: boolean, traceId?: string) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (traceId) headers["X-Trace-Id"] = traceId;
   const agentResp = await fetch(`${AGENT_BACKEND_URL}/agent/approve`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ run_id: runId, tool_id: toolId, approved: !!approved }),
   });
 

@@ -326,3 +326,89 @@ export async function saveAssistantResponse(convId: number, content: string, mod
   await db.insert(messages).values({ conversationId: convId, role: "assistant", content, model });
   await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, convId));
 }
+
+export interface AgentStreamResult {
+  fullResponse: string;
+}
+
+export async function streamAgentChat(
+  agentUrl: string,
+  payload: Record<string, unknown>,
+  traceId: string,
+  res: import("express").Response,
+  signal: AbortSignal,
+  log: { error: (obj: Record<string, unknown>, msg: string) => void },
+): Promise<AgentStreamResult> {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  let fullResponse = "";
+
+  try {
+    const agentResp = await fetch(`${agentUrl}/agent/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Trace-Id": traceId },
+      body: JSON.stringify(payload),
+      signal,
+    });
+
+    if (!agentResp.ok || !agentResp.body) {
+      const errText = await agentResp.text().catch(() => "Agent backend error");
+      res.write(`data: ${JSON.stringify({ type: "run.failed", run_id: "unknown", error: errText })}\n\n`);
+      return { fullResponse };
+    }
+
+    const reader = agentResp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith("data: ")) {
+          const dataStr = trimmed.slice(6);
+          res.write(`data: ${dataStr}\n\n`);
+          try {
+            const evt = JSON.parse(dataStr);
+            if (evt.type === "text.delta" && evt.content) {
+              fullResponse += evt.content;
+            }
+          } catch { /* pass through */ }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith("data: ")) {
+        const dataStr = trimmed.slice(6);
+        res.write(`data: ${dataStr}\n\n`);
+        try {
+          const evt = JSON.parse(dataStr);
+          if (evt.type === "text.delta" && evt.content) {
+            fullResponse += evt.content;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  } catch (err: unknown) {
+    if ((err as Error).name !== "AbortError") {
+      log.error({ err: err as Error, traceId }, "Agent proxy stream error");
+      try {
+        res.write(`data: ${JSON.stringify({ type: "run.failed", run_id: "unknown", error: "Stream error occurred" })}\n\n`);
+      } catch { /* ignore */ }
+    }
+  }
+
+  return { fullResponse };
+}
