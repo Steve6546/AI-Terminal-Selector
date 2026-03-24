@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useRef, useCallback, useEffect } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench, X, FileText, Image, ChevronDown, Upload } from "lucide-react";

@@ -1,3 +1,5 @@
+"use client";
+
 import { Sidebar } from "@/components/layout/sidebar";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { useRouter } from "next/navigation";
