@@ -281,7 +281,7 @@ async def deep_health_check(config: McpServerConfig, timeout_s: int) -> McpDeepH
             result = await asyncio.wait_for(_deep_health_http(config, timeout_s), timeout=timeout_s + 10)
         else:
             result = await asyncio.wait_for(_deep_health_stdio(config, timeout_s), timeout=timeout_s + 10)
-        if result.latency_ms > 5000:
+        if result.latency_ms > 5000 and result.status == "connected":
             result.status = "degraded"
             result.message = f"High latency: {result.latency_ms}ms"
         return result
