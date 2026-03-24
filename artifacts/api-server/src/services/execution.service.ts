@@ -57,6 +57,7 @@ export async function executeToolDirect(
   toolArgs: Record<string, unknown>,
   conversationId?: number,
   approved?: boolean,
+  traceId?: string,
 ) {
   const [tool] = await db.select().from(mcpTools).where(eq(mcpTools.id, toolId));
   if (!tool) return { notFound: "Tool not found" };
@@ -113,6 +114,7 @@ export async function executeToolDirect(
 
   logOperation({
     operation: "tool.execute",
+    traceId,
     toolName: tool.toolName,
     serverId: server.id,
     executionId: execution.id,

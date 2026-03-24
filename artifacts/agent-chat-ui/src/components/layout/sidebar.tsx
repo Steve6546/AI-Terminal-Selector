@@ -20,6 +20,7 @@ import {
   useListMcpServers,
 } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { subscribeToStream } from "@/hooks/use-shared-stream";
 
 import {
   DropdownMenu,
@@ -93,11 +94,9 @@ export function Sidebar() {
   // Subscribe to SSE health events so sidebar server status updates immediately
   // when a health check fires (rather than waiting for the 60s poll interval).
   useEffect(() => {
-    const es = new EventSource("/api/system/status/events");
-    es.addEventListener("server_status", () => {
+    return subscribeToStream("server_status", () => {
       queryClient.invalidateQueries({ queryKey: ["mcp-servers-sidebar"] });
     });
-    return () => es.close();
   }, [queryClient]);
 
   useEffect(() => {

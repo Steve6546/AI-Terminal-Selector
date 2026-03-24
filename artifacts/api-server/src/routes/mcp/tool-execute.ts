@@ -14,7 +14,7 @@ router.post("/mcp-tools/:toolId/execute", async (req, res) => {
       approved?: boolean;
     };
 
-    const result = await executionService.executeToolDirect(toolId, toolArgs, conversationId, approved);
+    const result = await executionService.executeToolDirect(toolId, toolArgs, conversationId, approved, req.traceId);
 
     if ("notFound" in result) { res.status(404).json({ error: result.notFound }); return; }
     if ("error" in result) { res.status(400).json({ error: result.error }); return; }
