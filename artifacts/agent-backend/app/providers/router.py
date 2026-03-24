@@ -50,10 +50,6 @@ class ProviderRouter:
             if provider and provider.is_available():
                 return provider
 
-        for provider in self._providers.values():
-            if provider.is_available():
-                return provider
-
         return None
 
     def select_model_for_task(self, task_type: str = "general") -> Optional[str]:

@@ -50,6 +50,27 @@ class AgentRuntime:
         self._memory = MemoryManager(provider_router)
         self._formatter = ResultFormatter()
 
+    def _resolve_provider_and_model(self, requested_model: str, task_type: str = "general"):
+        provider = self._router.get_provider_for_model(requested_model)
+        if provider:
+            return provider, requested_model
+
+        task_result = self._router.get_provider_for_task(task_type)
+        if task_result:
+            provider, fallback_model = task_result
+            logger.info(
+                "model_fallback",
+                requested=requested_model,
+                fallback=fallback_model,
+                task_type=task_type,
+            )
+            return provider, fallback_model
+
+        raise RuntimeError(
+            f"No provider available for model '{requested_model}' "
+            f"and no fallback for task type '{task_type}'"
+        )
+
     async def run(
         self,
         request: ChatRequest,
@@ -105,13 +126,7 @@ class AgentRuntime:
     ) -> str:
         await emitter.model_started()
 
-        provider = self._router.get_provider_for_model(model)
-        if not provider:
-            task_result = self._router.get_provider_for_task("general")
-            if task_result:
-                provider, model = task_result
-            else:
-                raise RuntimeError(f"No provider available for model {model}")
+        provider, model = self._resolve_provider_and_model(model, "general")
 
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
         messages = await self._memory.prepare_messages(messages)
@@ -184,13 +199,7 @@ class AgentRuntime:
     ) -> str:
         await emitter.model_started()
 
-        provider = self._router.get_provider_for_model(model)
-        if not provider:
-            task_result = self._router.get_provider_for_task("tool_optimized")
-            if task_result:
-                provider, model = task_result
-            else:
-                raise RuntimeError(f"No provider available for model {model}")
+        provider, model = self._resolve_provider_and_model(model, "tool_optimized")
 
         tool_executor = ToolExecutor(
             run_id=state.run_id,
