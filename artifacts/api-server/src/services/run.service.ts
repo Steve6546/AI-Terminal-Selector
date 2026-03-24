@@ -93,31 +93,6 @@ export async function updateToolCall(
   await db.update(toolCalls).set(updates).where(eq(toolCalls.id, id));
 }
 
-export async function createApproval(data: {
-  runId?: number;
-  toolCallId?: number;
-  toolName: string;
-  serverName?: string;
-  inputs?: Record<string, unknown>;
-  decision: string;
-  reason?: string;
-}) {
-  const [row] = await db
-    .insert(approvalDecisions)
-    .values({
-      runId: data.runId || null,
-      toolCallId: data.toolCallId || null,
-      toolName: data.toolName,
-      serverName: data.serverName || null,
-      inputs: data.inputs || {},
-      decision: data.decision,
-      actor: "user",
-      reason: data.reason || null,
-    })
-    .returning();
-  return { id: row.id };
-}
-
 export async function createExecution(data: {
   conversationId: number;
   serverId?: number;
