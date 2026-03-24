@@ -1,13 +1,12 @@
 "use client";
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 
 const BOTTOM_THRESHOLD = 80;
 
 export function useStickyScroll(deps: unknown[]) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isStuckRef = useRef(true);
-  const userScrolledRef = useRef(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const el = scrollRef.current;
@@ -19,16 +18,11 @@ export function useStickyScroll(deps: unknown[]) {
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    isStuckRef.current = distanceFromBottom < BOTTOM_THRESHOLD;
-    if (distanceFromBottom > BOTTOM_THRESHOLD) {
-      userScrolledRef.current = true;
-    } else {
-      userScrolledRef.current = false;
-    }
+    setIsAtBottom(distanceFromBottom < BOTTOM_THRESHOLD);
   }, []);
 
   useEffect(() => {
-    if (isStuckRef.current) {
+    if (isAtBottom) {
       const el = scrollRef.current;
       if (el) {
         requestAnimationFrame(() => {
@@ -46,5 +40,5 @@ export function useStickyScroll(deps: unknown[]) {
     return () => el.removeEventListener("scroll", handleScroll);
   }, [handleScroll]);
 
-  return { scrollRef, scrollToBottom, isAtBottom: () => isStuckRef.current };
+  return { scrollRef, scrollToBottom, isAtBottom };
 }

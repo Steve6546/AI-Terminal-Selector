@@ -403,7 +403,7 @@ export default function ChatPage() {
           )}
         </div>
 
-        {!isAtBottom() && isStreaming && (
+        {!isAtBottom && isStreaming && (
           <button
             onClick={() => scrollToBottom()}
             className="absolute bottom-36 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary/90 text-white text-xs font-medium shadow-lg hover:bg-primary transition-colors backdrop-blur-sm"
