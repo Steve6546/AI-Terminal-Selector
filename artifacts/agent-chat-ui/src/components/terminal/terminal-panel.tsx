@@ -123,16 +123,21 @@ export function TerminalPanel({ onClose, toolOutputLines = [], errorLines = [] }
 
     ws.onmessage = (event: MessageEvent<string>) => {
       try {
-        const msg = JSON.parse(event.data) as { type: "output" | "exit" | "error"; data?: string; message?: string };
-        if (msg.type === "output" && msg.data) {
+        const msg = JSON.parse(event.data) as { type: "output" | "exit" | "error" | "session"; data?: string; message?: string; sessionId?: string; exitCode?: number };
+        if (msg.type === "session") {
+          // session established
+        } else if (msg.type === "output" && msg.data) {
           term.write(msg.data);
         } else if (msg.type === "exit") {
-          term.write("\r\n\x1b[33m[Session ended. Reconnecting...]\x1b[0m\r\n");
+          term.write(`\r\n\x1b[33m[Session ended (exit ${msg.exitCode ?? "?"}). Reconnecting...]\x1b[0m\r\n`);
           setShellStatus("disconnected");
           setTimeout(connect, 2000);
         } else if (msg.type === "error") {
           term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
           setShellStatus("disconnected");
+          if (msg.message?.includes("timed out")) {
+            setTimeout(connect, 1000);
+          }
         }
       } catch { /* ignore */ }
     };

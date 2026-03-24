@@ -38,8 +38,10 @@
 - Edit button on user messages: opens inline editor; on send, truncates history from that point and regenerates
 - In-session context summarization: if conversation history > 20 messages, older turns are summarized into a compact context block before sending to the model (prevents token limit issues)
 - Auto-create conversation on send: if no conversation selected, creates one and auto-navigates
-- Real terminal (xterm.js + node-pty) with WebSocket connection
-- File attachments (upload files, paste text, JSON, images)
+- Real terminal (xterm.js + node-pty) with WebSocket connection, session IDs, 30-min idle timeout, audit logging (session start/end/idle events written to audit_events table)
+- File attachments with validation pipeline: type whitelist, 10MB size limit, SHA-256 checksum, text extraction for text/CSV/HTML/JSON/XML files, search by filename or extracted text
+- Chat performance optimizations: MessageBubble memoized with React.memo, RAF-throttled streaming text updates, sticky-to-bottom scroll with "Follow stream" button, streaming bubble renders plain text (deferred markdown)
+- CORS supports localhost on any port in development (not just port-less localhost)
 - Comprehensive Settings page with 8 tabs: General, Agent Settings, MCP Servers, Tools, Databases, Security, Logs & Debug, UI Settings
 - Per-tool enable/disable and requiresApproval toggles in Settings → Tools
 - Database Connectors: add PostgreSQL/MySQL/SQLite connections with encrypted passwords, Test Connection

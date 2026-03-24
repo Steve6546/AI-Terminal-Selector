@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -55,7 +55,45 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
   );
 }
 
-export function MessageBubble({ message, currentModel, onRetry, onEditResend }: MessageBubbleProps) {
+const markdownComponents = {
+  code: CodeBlock,
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4 last:mb-0 text-foreground/90">{children}</p>,
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a href={href} className="text-primary hover:text-primary/80 underline underline-offset-4" target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="text-foreground/90">{children}</li>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-2xl font-bold font-display mt-8 mb-4 text-white">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-xl font-bold font-display mt-6 mb-3 text-white">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-lg font-bold font-display mt-4 mb-2 text-white">{children}</h3>,
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="border-l-4 border-primary/40 pl-4 my-4 italic text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="overflow-x-auto my-4 rounded-xl border border-white/10">
+      <table className="w-full text-sm border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-white/5">{children}</thead>,
+  th: ({ children }: { children?: React.ReactNode }) => (
+    <th className="px-4 py-2 text-left font-semibold text-white border-b border-white/10">{children}</th>
+  ),
+  td: ({ children }: { children?: React.ReactNode }) => (
+    <td className="px-4 py-2 text-foreground/80 border-b border-white/5">{children}</td>
+  ),
+  tr: ({ children }: { children?: React.ReactNode }) => <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>,
+  hr: () => <hr className="border-white/10 my-6" />,
+};
+
+const remarkPlugins = [remarkGfm, remarkMath];
+const rehypePlugins = [rehypeKatex];
+
+function MessageBubbleInner({ message, currentModel, onRetry, onEditResend }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const { toast } = useToast();
 
@@ -133,7 +171,7 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
         <div className={cn("flex flex-col gap-2 min-w-0 flex-1", isUser ? "items-end" : "items-start")}>
           <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
             <span>{isUser ? "You" : (message.model ?? "Agent")}</span>
-            <span>•</span>
+            <span>&bull;</span>
             <span>{format(new Date(message.createdAt), "h:mm a")}</span>
           </div>
 
@@ -178,42 +216,9 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
               ) : (
                 <div className="markdown-content w-full">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                    components={{
-                      code: CodeBlock,
-                      p: ({ children }) => <p className="mb-4 last:mb-0 text-foreground/90">{children}</p>,
-                      a: ({ href, children }) => (
-                        <a href={href} className="text-primary hover:text-primary/80 underline underline-offset-4" target="_blank" rel="noopener noreferrer">
-                          {children}
-                        </a>
-                      ),
-                      ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
-                      li: ({ children }) => <li className="text-foreground/90">{children}</li>,
-                      h1: ({ children }) => <h1 className="text-2xl font-bold font-display mt-8 mb-4 text-white">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-xl font-bold font-display mt-6 mb-3 text-white">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-lg font-bold font-display mt-4 mb-2 text-white">{children}</h3>,
-                      blockquote: ({ children }) => (
-                        <blockquote className="border-l-4 border-primary/40 pl-4 my-4 italic text-muted-foreground">
-                          {children}
-                        </blockquote>
-                      ),
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-4 rounded-xl border border-white/10">
-                          <table className="w-full text-sm border-collapse">{children}</table>
-                        </div>
-                      ),
-                      thead: ({ children }) => <thead className="bg-white/5">{children}</thead>,
-                      th: ({ children }) => (
-                        <th className="px-4 py-2 text-left font-semibold text-white border-b border-white/10">{children}</th>
-                      ),
-                      td: ({ children }) => (
-                        <td className="px-4 py-2 text-foreground/80 border-b border-white/5">{children}</td>
-                      ),
-                      tr: ({ children }) => <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>,
-                      hr: () => <hr className="border-white/10 my-6" />,
-                    }}
+                    remarkPlugins={remarkPlugins}
+                    rehypePlugins={rehypePlugins}
+                    components={markdownComponents}
                   >
                     {message.content}
                   </ReactMarkdown>
@@ -222,7 +227,6 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
             </div>
           )}
 
-          {/* Action buttons */}
           {!isEditing && (
             <div
               className={cn(
@@ -299,3 +303,16 @@ export function MessageBubble({ message, currentModel, onRetry, onEditResend }: 
     </div>
   );
 }
+
+export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
+  return (
+    prev.message.id === next.message.id &&
+    prev.message.content === next.message.content &&
+    prev.message.role === next.message.role &&
+    prev.message.model === next.message.model &&
+    prev.message.createdAt === next.message.createdAt &&
+    prev.currentModel === next.currentModel &&
+    prev.onRetry === next.onRetry &&
+    prev.onEditResend === next.onEditResend
+  );
+});

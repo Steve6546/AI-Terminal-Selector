@@ -8,13 +8,17 @@
  * - WS upgrade validates the token matches the connecting IP, and that the WS
  *   Origin header matches allowed origins derived from the Replit dev domain.
  * - Token is consumed (deleted) on first use to prevent replay.
+ * - Each session has a unique ID and idle timeout (default 30 min).
+ * - Session open/close/idle events are logged to the audit_events table.
  */
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import type { Server } from "http";
 import { randomUUID } from "crypto";
+import { db, auditEvents } from "@workspace/db";
 
 const TOKEN_TTL_MS = 60_000;
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 interface TokenRecord {
   expiry: number;
@@ -22,33 +26,48 @@ interface TokenRecord {
   origin: string;
 }
 
+interface SessionRecord {
+  sessionId: string;
+  ip: string;
+  startedAt: number;
+  lastActivityAt: number;
+  idleTimer: ReturnType<typeof setTimeout>;
+}
+
 const pendingTokens = new Map<string, TokenRecord>();
+const activeSessions = new Map<WebSocket, SessionRecord>();
 
 function parseOrigin(raw: string): string | null {
   try { return new URL(raw).origin; } catch { return null; }
 }
 
 function allowedOrigin(origin: string): boolean {
-  // Permit same-origin (no Origin header)
   if (!origin) return true;
 
-  const reqOrigin = parseOrigin(origin);
-  if (!reqOrigin) return false;
+  try {
+    const url = new URL(origin);
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return true;
 
-  // Strict equality checks — no startsWith/prefix matching to prevent origin confusion
-  const allowed: string[] = [];
+    const devDomain = process.env["REPLIT_DEV_DOMAIN"];
+    if (devDomain && url.origin === new URL(`https://${devDomain}`).origin) return true;
 
-  // Localhost development (any port)
-  allowed.push(parseOrigin("http://localhost") ?? "");
-  allowed.push(parseOrigin("http://127.0.0.1") ?? "");
+    const appsDomain = process.env["REPLIT_DEPLOYMENT_URL"];
+    if (appsDomain) {
+      try {
+        if (url.origin === new URL(appsDomain).origin) return true;
+      } catch { /* invalid env var */ }
+    }
 
-  const devDomain = process.env["REPLIT_DEV_DOMAIN"];
-  if (devDomain) allowed.push(parseOrigin(`https://${devDomain}`) ?? "");
+    return false;
+  } catch {
+    return false;
+  }
+}
 
-  const appsDomain = process.env["REPLIT_DEPLOYMENT_URL"];
-  if (appsDomain) allowed.push(parseOrigin(appsDomain) ?? "");
-
-  return allowed.some((a) => a && a === reqOrigin);
+function logAudit(eventType: string, details: Record<string, unknown>) {
+  db.insert(auditEvents)
+    .values({ eventType, entityType: "terminal", actor: "user", details })
+    .catch(() => {});
 }
 
 /** Generate a one-time terminal auth token bound to the caller's IP and origin. */
@@ -56,7 +75,6 @@ export function issueTerminalToken(ip: string, origin: string): string {
   const token = randomUUID();
   const expiry = Date.now() + TOKEN_TTL_MS;
   pendingTokens.set(token, { expiry, ip, origin });
-  // Prune stale tokens
   for (const [t, rec] of pendingTokens) {
     if (rec.expiry < Date.now()) pendingTokens.delete(t);
   }
@@ -72,18 +90,31 @@ function consumeToken(token: string | null, ip: string, wsOrigin: string): boole
     pendingTokens.delete(token);
     return false;
   }
-  // IP must match
   if (rec.ip !== ip) return false;
-  // Origin must match (parsed strict equality).
-  // If stored origin is "" (same-origin token fetch, no Origin header), skip origin check —
-  // the IP binding is sufficient, and same-origin WS is trusted by definition.
   if (rec.origin !== "" && wsOrigin) {
     const reqOrigin = parseOrigin(wsOrigin);
     const recOrigin = parseOrigin(rec.origin) ?? rec.origin;
     if (reqOrigin !== recOrigin) return false;
   }
-  pendingTokens.delete(token); // one-time use
+  pendingTokens.delete(token);
   return true;
+}
+
+function resetIdleTimer(ws: WebSocket, session: SessionRecord, ptyProcess: pty.IPty) {
+  clearTimeout(session.idleTimer);
+  session.lastActivityAt = Date.now();
+  session.idleTimer = setTimeout(() => {
+    logAudit("terminal.idle_timeout", {
+      sessionId: session.sessionId,
+      ip: session.ip,
+      idleMs: IDLE_TIMEOUT_MS,
+    });
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "error", message: "Session timed out due to inactivity" }));
+      ws.close();
+    }
+    try { ptyProcess.kill(); } catch { /* already dead */ }
+  }, IDLE_TIMEOUT_MS);
 }
 
 export function attachTerminalServer(httpServer: Server): void {
@@ -96,7 +127,6 @@ export function attachTerminalServer(httpServer: Server): void {
       return;
     }
 
-    // Validate Origin header on the WebSocket connection
     const wsOrigin = req.headers.origin ?? "";
     if (wsOrigin && !allowedOrigin(wsOrigin)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
@@ -104,7 +134,6 @@ export function attachTerminalServer(httpServer: Server): void {
       return;
     }
 
-    // Validate one-time token (with IP + origin binding)
     const token = url.searchParams.get("token");
     const ip = (req.socket.remoteAddress ?? "").split(",")[0]?.trim() ?? "";
     if (!consumeToken(token, ip, wsOrigin)) {
@@ -114,11 +143,12 @@ export function attachTerminalServer(httpServer: Server): void {
     }
 
     wss.handleUpgrade(req, socket as never, head, (ws) => {
-      wss.emit("connection", ws, req);
+      wss.emit("connection", ws, req, ip);
     });
   });
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket, _req: unknown, ip: string) => {
+    const sessionId = randomUUID();
     const shell = process.env.SHELL ?? "/bin/bash";
     const cols = 120;
     const rows = 30;
@@ -138,15 +168,35 @@ export function attachTerminalServer(httpServer: Server): void {
       return;
     }
 
+    const session: SessionRecord = {
+      sessionId,
+      ip: ip ?? "",
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+      idleTimer: setTimeout(() => {}, 0),
+    };
+    activeSessions.set(ws, session);
+    resetIdleTimer(ws, session, ptyProcess);
+
+    logAudit("terminal.session_start", { sessionId, ip, pid: ptyProcess.pid });
+
+    ws.send(JSON.stringify({ type: "session", sessionId }));
+
     ptyProcess.onData((data: string) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "output", data }));
       }
     });
 
-    ptyProcess.onExit(() => {
+    ptyProcess.onExit(({ exitCode }) => {
+      logAudit("terminal.session_end", {
+        sessionId,
+        ip,
+        exitCode,
+        durationMs: Date.now() - session.startedAt,
+      });
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "exit" }));
+        ws.send(JSON.stringify({ type: "exit", exitCode }));
         ws.close();
       }
     });
@@ -160,6 +210,7 @@ export function attachTerminalServer(httpServer: Server): void {
           rows?: number;
         };
         if (msg.type === "input" && msg.data !== undefined) {
+          resetIdleTimer(ws, session, ptyProcess);
           ptyProcess.write(msg.data);
         } else if (msg.type === "resize" && msg.cols && msg.rows) {
           ptyProcess.resize(msg.cols, msg.rows);
@@ -167,7 +218,13 @@ export function attachTerminalServer(httpServer: Server): void {
       } catch { /* Ignore malformed messages */ }
     });
 
-    ws.on("close", () => { try { ptyProcess.kill(); } catch { /* Already dead */ } });
-    ws.on("error", () => { try { ptyProcess.kill(); } catch { /* Already dead */ } });
+    const cleanup = () => {
+      clearTimeout(session.idleTimer);
+      activeSessions.delete(ws);
+      try { ptyProcess.kill(); } catch { /* Already dead */ }
+    };
+
+    ws.on("close", cleanup);
+    ws.on("error", cleanup);
   });
 }

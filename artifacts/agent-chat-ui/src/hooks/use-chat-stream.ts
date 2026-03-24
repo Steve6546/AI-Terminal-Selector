@@ -77,6 +77,25 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
   const abortControllerRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
 
+  const rafRef = useRef<number | null>(null);
+  const pendingTextRef = useRef("");
+
+  const flushText = useCallback(() => {
+    if (pendingTextRef.current) {
+      const chunk = pendingTextRef.current;
+      pendingTextRef.current = "";
+      setStreamedText((prev) => prev + chunk);
+    }
+    rafRef.current = null;
+  }, []);
+
+  const appendStreamedText = useCallback((text: string) => {
+    pendingTextRef.current += text;
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(flushText);
+    }
+  }, [flushText]);
+
   const updateTool = useCallback((toolId: string, update: Partial<LiveTool>) => {
     setLiveTools((prev) => {
       const idx = prev.findIndex((t) => t.toolId === toolId);
@@ -101,6 +120,11 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     setThinkingDone(false);
     setRunId(null);
     setPendingApproval(null);
+    pendingTextRef.current = "";
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
 
     abortControllerRef.current = new AbortController();
 
@@ -172,7 +196,7 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                   break;
 
                 case "text.delta":
-                  if (event.content) setStreamedText((prev) => prev + (event.content as string));
+                  if (event.content) appendStreamedText(event.content as string);
                   break;
 
                 case "tool.started": {
@@ -245,7 +269,7 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
             if (data.done) {
               break outer;
             } else if (data.content) {
-              setStreamedText((prev) => prev + (data.content as string));
+              appendStreamedText(data.content as string);
             } else if (data.tool_execution) {
               // legacy
             } else if (data.error) {
@@ -266,6 +290,15 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
       }
       return;
     } finally {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (pendingTextRef.current) {
+        const remaining = pendingTextRef.current;
+        pendingTextRef.current = "";
+        setStreamedText((prev) => prev + remaining);
+      }
       setIsStreaming(false);
       setIsThinking(false);
       setPendingApproval(null);
@@ -281,11 +314,16 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
         onAutoNamed?.(result.title);
       })
       .catch(() => {});
-  }, [conversationId, model, mode, queryClient, onFinish, onError, onAutoNamed, updateTool]);
+  }, [conversationId, model, mode, queryClient, onFinish, onError, onAutoNamed, updateTool, appendStreamedText, flushText]);
 
   const stopStream = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    pendingTextRef.current = "";
     setIsStreaming(false);
     setIsThinking(false);
     setLiveTools([]);

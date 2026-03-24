@@ -9,20 +9,26 @@ const app: Express = express();
 
 // Derive the allowed origin from the Replit dev domain env var (always present in Replit)
 // In production deployments the origin will be the .replit.app domain.
-function buildAllowedOrigins(): string[] {
-  const origins: string[] = ["http://localhost", "http://127.0.0.1"];
-  const devDomain = process.env["REPLIT_DEV_DOMAIN"];
-  if (devDomain) {
-    origins.push(`https://${devDomain}`);
-  }
-  const appsDomain = process.env["REPLIT_DEPLOYMENT_URL"];
-  if (appsDomain) {
-    origins.push(appsDomain);
-  }
-  return origins;
-}
+function isAllowedOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return true;
 
-const allowedOrigins = buildAllowedOrigins();
+    const devDomain = process.env["REPLIT_DEV_DOMAIN"];
+    if (devDomain && url.origin === new URL(`https://${devDomain}`).origin) return true;
+
+    const appsDomain = process.env["REPLIT_DEPLOYMENT_URL"];
+    if (appsDomain) {
+      try {
+        if (url.origin === new URL(appsDomain).origin) return true;
+      } catch { /* invalid env var */ }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 app.use(
   pinoHttp({
@@ -41,25 +47,14 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow same-origin (no origin header)
       if (!origin) {
         callback(null, true);
         return;
       }
-      // Parse and compare the exact origin (scheme + host + port) to prevent prefix abuse
-      try {
-        const reqOrigin = new URL(origin).origin; // normalizes trailing slashes etc.
-        const match = allowedOrigins.some((allowed) => {
-          // Compare parsed origins for strict equality
-          try { return new URL(allowed).origin === reqOrigin; } catch { return false; }
-        });
-        if (match) {
-          callback(null, true);
-        } else {
-          callback(new Error(`CORS: origin ${origin} not allowed`));
-        }
-      } catch {
-        callback(new Error(`CORS: invalid origin ${origin}`));
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
       }
     },
     credentials: true,

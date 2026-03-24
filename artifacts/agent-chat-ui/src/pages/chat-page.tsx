@@ -3,11 +3,7 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Zap, Code, TerminalSquare, AlertTriangle, Sparkles } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
+import { MessageSquare, Zap, Code, TerminalSquare, AlertTriangle, ChevronDown } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -18,6 +14,7 @@ import { useListMessages, useListExecutions, useCreateConversation, useTruncateM
 import type { ChatMessage, Execution } from "@workspace/api-client-react";
 import { useLocalSettings } from "@/hooks/use-local-settings";
 import { useChatStream } from "@/hooks/use-chat-stream";
+import { useStickyScroll } from "@/hooks/use-sticky-scroll";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
 import { ChatInput, type ToolParams } from "@/components/chat/chat-input";
@@ -26,6 +23,7 @@ import { ToolExecutionCard } from "@/components/chat/tool-execution-card";
 import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { LiveToolCard } from "@/components/chat/live-tool-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
+import { StreamingBubble } from "@/components/chat/streaming-bubble";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
@@ -102,7 +100,6 @@ export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const conversationId = params.id ? parseInt(params.id) : null;
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<{ text: string; attachmentIds?: number[]; toolParams?: ToolParams } | null>(null);
   const [streamError, setStreamError] = useState<Error | null>(null);
@@ -142,7 +139,6 @@ export default function ChatPage() {
 
   const hasActiveTool = liveTools.some((t) => t.phase !== "done");
 
-  // Accumulate tool output lines across the session for the Terminal Output tab
   const [toolOutputLines, setToolOutputLines] = useState<string[]>([]);
   const [sessionErrorLines, setSessionErrorLines] = useState<string[]>([]);
   const seenToolStdout = useRef<Set<string>>(new Set());
@@ -168,11 +164,9 @@ export default function ChatPage() {
     }
   }, [streamError]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, executions, streamedText, liveTools, isThinking]);
+  const { scrollRef, scrollToBottom, isAtBottom } = useStickyScroll([
+    messages, executions, streamedText, liveTools, isThinking,
+  ]);
 
   const timelineItems = useMemo(() => {
     if (!messages && !executions) return [];
@@ -262,7 +256,7 @@ export default function ChatPage() {
       <main className="flex-1 flex flex-col relative min-w-0 overflow-hidden">
         <TopBar model={model} onModelChange={setModel} onTerminalToggle={() => setShowTerminal((p) => !p)} />
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
           {!conversationId ? (
             <div className="min-h-full flex flex-col items-center justify-center p-4 sm:p-8">
               <motion.div
@@ -353,7 +347,6 @@ export default function ChatPage() {
                     </motion.div>
                   ))}
 
-                  {/* ── Live streaming section ── */}
                   <AnimatePresence>
                     {isStreaming && (
                       <motion.div
@@ -362,7 +355,6 @@ export default function ChatPage() {
                         exit={{ opacity: 0 }}
                         className="flex flex-col gap-3 py-4"
                       >
-                        {/* Thinking panel */}
                         <AnimatePresence>
                           {(isThinking || thinkingLines.length > 0) && (
                             <ThinkingPanel
@@ -373,7 +365,6 @@ export default function ChatPage() {
                           )}
                         </AnimatePresence>
 
-                        {/* Live tool cards */}
                         {liveTools.length > 0 && (
                           <div className="px-6 flex flex-col gap-2">
                             {liveTools.map((tool) => (
@@ -388,7 +379,6 @@ export default function ChatPage() {
                           </div>
                         )}
 
-                        {/* Approval card — inline in stream */}
                         <AnimatePresence>
                           {pendingApproval && (
                             <ApprovalCard
@@ -399,41 +389,11 @@ export default function ChatPage() {
                           )}
                         </AnimatePresence>
 
-                        {/* Streaming text bubble */}
-                        <div className="w-full flex py-2 justify-start bg-secondary/20 border-y border-white/[0.02]">
-                          <div className="flex gap-4 max-w-4xl w-full px-6 flex-row">
-                            <div className="flex-shrink-0 mt-1">
-                              <div className={cn(
-                                "w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg bg-gradient-to-br from-primary to-accent border border-primary/30 glow-effect",
-                                !streamedText && "animate-pulse"
-                              )}>
-                                <SparklesIcon className="w-5 h-5 text-white" />
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-2 min-w-0 flex-1 items-start">
-                              <div className="flex items-center gap-2 text-xs font-mono text-primary">
-                                <span>
-                                  {hasActiveTool
-                                    ? "Executing tools..."
-                                    : isThinking
-                                    ? "Thinking..."
-                                    : "Generating response..."}
-                                </span>
-                              </div>
-                              <div className="text-sm leading-relaxed w-full text-foreground markdown-content">
-                                {streamedText ? (
-                                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streamedText}</ReactMarkdown>
-                                ) : (
-                                  <span className="flex gap-1 mt-2">
-                                    <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" />
-                                    <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0.1s" }} />
-                                    <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0.2s" }} />
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        <StreamingBubble
+                          text={streamedText}
+                          isThinking={isThinking}
+                          hasActiveTool={hasActiveTool}
+                        />
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -443,14 +403,22 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* Error Banner */}
+        {!isAtBottom() && isStreaming && (
+          <button
+            onClick={() => scrollToBottom()}
+            className="absolute bottom-36 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary/90 text-white text-xs font-medium shadow-lg hover:bg-primary transition-colors backdrop-blur-sm"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+            Follow stream
+          </button>
+        )}
+
         <AnimatePresence>
           {streamError && (
             <ErrorBanner error={streamError} onDismiss={() => setStreamError(null)} />
           )}
         </AnimatePresence>
 
-        {/* Input Area */}
         <div className="w-full bg-gradient-to-t from-background via-background/95 to-transparent pt-2 shrink-0">
           <ChatInput
             onSend={handleSend}
@@ -462,7 +430,6 @@ export default function ChatPage() {
           />
         </div>
 
-        {/* Terminal Panel */}
         <AnimatePresence>
           {showTerminal && (
             <motion.div
@@ -481,13 +448,5 @@ export default function ChatPage() {
         </AnimatePresence>
       </main>
     </div>
-  );
-}
-
-function SparklesIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-    </svg>
   );
 }
