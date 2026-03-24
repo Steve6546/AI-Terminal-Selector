@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { conversations, messages, executions, attachments } from "@workspace/db";
 import { eq, desc, count, and, gte, inArray } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { streamManager } from "./stream-manager";
 
 const DEFAULT_TITLES = new Set(["New Chat", "New Conversation"]);
 
@@ -383,6 +384,10 @@ export async function streamAgentChat(
             if (evt.type === "text.delta" && evt.content) {
               fullResponse += evt.content;
             }
+            const agentEventTypes = ["run.created", "run.completed", "run.failed", "tool.call_start", "tool.call_end", "tool.approval_required", "model.started"];
+            if (agentEventTypes.includes(evt.type)) {
+              streamManager.broadcast("agent_event", evt);
+            }
           } catch { /* pass through */ }
         }
       }
@@ -397,6 +402,10 @@ export async function streamAgentChat(
           const evt = JSON.parse(dataStr);
           if (evt.type === "text.delta" && evt.content) {
             fullResponse += evt.content;
+          }
+          const agentEventTypes = ["run.created", "run.completed", "run.failed", "tool.call_start", "tool.call_end", "tool.approval_required", "model.started"];
+          if (agentEventTypes.includes(evt.type)) {
+            streamManager.broadcast("agent_event", evt);
           }
         } catch { /* ignore */ }
       }

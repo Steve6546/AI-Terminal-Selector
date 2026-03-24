@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
-import { runs, runEvents, toolCalls, approvalDecisions, executions } from "@workspace/db";
+import { runs, runEvents, toolCalls, executions } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { logOperation } from "../lib/structured-log";
 
 export async function createRun(data: {
   runId: string;
@@ -19,6 +20,7 @@ export async function createRun(data: {
       status: data.status || "running",
     })
     .returning();
+  logOperation({ operation: "run.created", runId: data.runId, conversationId: data.conversationId, status: "running" });
   return { id: row.id, runId: row.runId };
 }
 
@@ -40,6 +42,9 @@ export async function updateRun(
     updates.completedAt = new Date();
   }
   await db.update(runs).set(updates).where(eq(runs.runId, runId));
+  if (data.status) {
+    logOperation({ operation: "run.updated", runId, status: data.status });
+  }
 }
 
 export async function createToolCall(data: {

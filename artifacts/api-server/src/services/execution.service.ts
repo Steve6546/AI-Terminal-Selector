@@ -5,6 +5,7 @@ import { executeMcpTool } from "../lib/mcp-gateway";
 import { unmaskSecret } from "../lib/secret-utils";
 import { checkEndpointAllowed } from "../lib/domain-allowlist";
 import { recordToolExecution } from "./metrics.service";
+import { logOperation } from "../lib/structured-log";
 
 export async function listExecutions(conversationId?: number, limit = 20) {
   const selectShape = {
@@ -109,6 +110,16 @@ export async function executeToolDirect(
   const durationMs = Date.now() - startedAt;
 
   recordToolExecution(tool.toolName, result.success, durationMs);
+
+  logOperation({
+    operation: "tool.execute",
+    toolName: tool.toolName,
+    serverId: server.id,
+    executionId: execution.id,
+    conversationId: conversationId ?? undefined,
+    status: result.success ? "success" : "error",
+    durationMs,
+  });
 
   const summary = result.success
     ? typeof result.content === "string"
