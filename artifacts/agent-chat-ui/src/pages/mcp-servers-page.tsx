@@ -36,6 +36,7 @@ import {
   getListMcpServersQueryKey,
   useListMcpTools,
 } from "@workspace/api-client-react";
+import { getToolRisk } from "./mcp-server-detail-page";
 
 // ─── Zod schema for Add / Edit form ────────────────────────────────────────
 
@@ -536,13 +537,15 @@ function ServerCardRiskSummary({ serverId }: { serverId: number }) {
   const { data: tools } = useListMcpTools(serverId);
   if (!tools || tools.length === 0) return null;
 
-  const approvalCount = tools.filter((t) => t.requiresApproval).length;
-  if (approvalCount === 0) return null;
+  const counts = { high: 0, medium: 0, low: 0 };
+  tools.forEach((t) => { counts[getToolRisk(t)]++; });
+  if (counts.high === 0 && counts.medium === 0) return null;
 
   return (
-    <span className="text-xs bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-lg px-2 py-0.5 flex items-center gap-1">
-      <Lock className="w-3 h-3" />
-      {approvalCount} need approval
+    <span className="text-xs bg-secondary rounded-lg px-2 py-0.5 flex items-center gap-1.5 text-muted-foreground">
+      {counts.high > 0 && <span className="text-red-400">{counts.high}H</span>}
+      {counts.medium > 0 && <span className="text-yellow-400">{counts.medium}M</span>}
+      {counts.low > 0 && <span className="text-green-400">{counts.low}L</span>}
     </span>
   );
 }

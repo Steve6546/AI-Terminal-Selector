@@ -76,11 +76,17 @@ async function runHealthChecks() {
       .where(eq(mcpServers.enabled, true));
 
     for (const server of servers) {
+      const checkingNow = new Date();
+      await db.update(mcpServers).set({
+        status: "checking",
+        lastCheckedAt: checkingNow,
+      }).where(eq(mcpServers.id, server.id));
+
       serverStatusEmitter.broadcast({
         serverId: server.id,
         name: server.name,
         status: "checking",
-        lastCheckedAt: new Date().toISOString(),
+        lastCheckedAt: checkingNow.toISOString(),
       });
 
       const result = await performDeepCheck(server);
