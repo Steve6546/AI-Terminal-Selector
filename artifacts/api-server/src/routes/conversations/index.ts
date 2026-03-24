@@ -8,53 +8,13 @@ import {
   SendMessageBody,
 } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { executeMcpTool } from "../../lib/mcp-gateway";
 import { handleRouteError } from "../../lib/handle-error";
 import { unmaskSecret } from "../../lib/secret-utils";
 import { checkEndpointAllowed } from "../../lib/domain-allowlist";
 
 const router: IRouter = Router();
 
-const pendingApprovals = new Map<string, (approved: boolean) => void>();
-
-type RunEvent =
-  | { type: "run.created"; run_id: string; conversation_id: number; model: string; mode: string }
-  | { type: "model.started"; run_id: string }
-  | { type: "thinking.started"; run_id: string; message: string }
-  | { type: "thinking.delta"; run_id: string; content: string }
-  | { type: "thinking.completed"; run_id: string }
-  | { type: "text.delta"; run_id: string; content: string }
-  | { type: "tool.started"; run_id: string; tool_id: string; tool_name: string; server_id: number | null; server_name: string | null; inputs: Record<string, unknown> }
-  | { type: "tool.stdout"; run_id: string; tool_id: string; content: string }
-  | { type: "tool.completed"; run_id: string; tool_id: string; execution_id: number | null; success: boolean; duration_ms: number; error?: string }
-  | { type: "tool.approval_required"; run_id: string; tool_id: string; tool_name: string; server_name: string | null; inputs: Record<string, unknown> }
-  | { type: "artifact.created"; run_id: string; tool_id: string; tool_name: string; artifact_type: "json" | "text" | "code"; size_bytes: number; preview: string }
-  | { type: "run.completed"; run_id: string }
-  | { type: "run.failed"; run_id: string; error: string };
-
-const AGENT_SYSTEM_PROMPT = `You are an expert AI agent with access to MCP (Model Context Protocol) tools and servers.
-
-## Your capabilities
-- Discover and execute tools across all connected MCP servers
-- Chain multiple tools together to complete complex, multi-step workflows
-- Analyze data, manage servers, automate tasks, and interact with external APIs
-
-## How you work
-1. **Understand** the user's intent completely. If ambiguous, ask one focused clarifying question.
-2. **Plan** which servers and tools you will use, and in what order.
-3. **Execute** tools systematically. Check each result before proceeding to the next step.
-4. **Handle errors** gracefully — if a tool fails, explain why and try an alternative approach.
-5. **Report** progress at each step with clear, concise summaries.
-
-## Tool selection
-- Tools are namespaced as \`{serverId}__{toolName}\`. Always use the full namespaced form.
-- Prefer tools that match the user's intent most precisely.
-- For destructive or irreversible operations, always confirm with the user before executing.
-
-## Quality standards
-- Never fabricate tool results. If a tool returns nothing useful, say so.
-- Always provide a clear final summary of what was accomplished and any follow-up suggestions.
-- Keep your reasoning transparent — briefly explain why you are choosing each tool.`;
+const AGENT_BACKEND_URL = `http://localhost:${process.env.AGENT_BACKEND_PORT ?? "9000"}`;
 
 router.get("/conversations", async (req, res) => {
   try {
@@ -196,6 +156,7 @@ async function buildToolDefinitions(serverIds?: number[]) {
       toolName: mcpTools.toolName,
       description: mcpTools.description,
       inputSchema: mcpTools.inputSchema,
+      requiresApproval: mcpTools.requiresApproval,
     })
     .from(mcpTools)
     .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
@@ -207,20 +168,56 @@ async function buildToolDefinitions(serverIds?: number[]) {
     input_schema: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
     _toolId: t.id,
     _serverId: t.serverId,
+    requires_approval: t.requiresApproval ?? false,
   }));
 }
 
-router.post("/conversations/:id/runs/:runId/approve", (req, res) => {
+async function buildServerInfos() {
+  const servers = await db
+    .select()
+    .from(mcpServers)
+    .where(eq(mcpServers.enabled, true));
+
+  const result = [];
+  for (const s of servers) {
+    const allowCheck = await checkEndpointAllowed(s.endpoint, s.transportType);
+    if (!allowCheck.allowed) continue;
+    result.push({
+      id: s.id,
+      name: s.name,
+      transport_type: s.transportType,
+      endpoint: s.endpoint,
+      command: s.command,
+      args: (s.args as string[]) ?? [],
+      auth_type: s.authType,
+      auth_secret: unmaskSecret(s.encryptedSecret),
+      timeout: s.timeout,
+      retry_count: s.retryCount,
+    });
+  }
+  return result;
+}
+
+router.post("/conversations/:id/runs/:runId/approve", async (req, res) => {
   const { runId } = req.params;
   const { tool_id, approved } = req.body as { tool_id: string; approved: boolean };
-  const key = `${runId}:${tool_id}`;
-  const resolve = pendingApprovals.get(key);
-  if (resolve) {
-    resolve(!!approved);
-    pendingApprovals.delete(key);
-    res.json({ ok: true });
-  } else {
-    res.status(404).json({ error: "No pending approval for this tool" });
+
+  try {
+    const agentResp = await fetch(`${AGENT_BACKEND_URL}/agent/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: runId, tool_id, approved: !!approved }),
+    });
+
+    if (agentResp.ok) {
+      res.json({ ok: true });
+    } else {
+      const body = await agentResp.text().catch(() => "");
+      res.status(agentResp.status).json({ error: body || "Approval failed" });
+    }
+  } catch (err) {
+    req.log.error({ err }, "Failed to forward approval to agent");
+    handleRouteError(res, err, "Internal server error");
   }
 });
 
@@ -254,7 +251,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
     type ImageMediaType = typeof IMAGE_MIMES[number];
     const isImageMime = (m: string): m is ImageMediaType => (IMAGE_MIMES as readonly string[]).includes(m);
 
-    type MsgParam = { role: "user" | "assistant"; content: string | Array<{ type: string; [k: string]: unknown }> };
+    type MsgParam = { role: string; content: string | Array<{ type: string; [k: string]: unknown }> };
     const chatMessages: MsgParam[] = allMessages.map((m, idx) => {
       const isLastUser = idx === allMessages.length - 1 && m.role === "user";
       if (isLastUser && attachmentRows.length > 0) {
@@ -268,423 +265,112 @@ router.post("/conversations/:id/messages", async (req, res) => {
             contentBlocks.push({ type: "text", text: `\n\n<file name="${att.fileName}" type="${att.fileType}">\n${decoded}\n</file>` });
           }
         }
-        return { role: m.role as "user" | "assistant", content: contentBlocks };
+        return { role: m.role, content: contentBlocks };
       }
-      return { role: m.role as "user" | "assistant", content: m.content };
+      return { role: m.role, content: m.content };
     });
+
+    const mcpToolDefs = await buildToolDefinitions();
+    const mcpServerInfos = await buildServerInfos();
+
+    const agentPayload = {
+      conversation_id: convId,
+      messages: chatMessages,
+      model,
+      mode,
+      tools: mcpToolDefs.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema,
+        requires_approval: t.requires_approval,
+      })),
+      servers: mcpServerInfos,
+      selected_server_id: typeof rawBody.selectedServerId === "number" ? rawBody.selectedServerId : null,
+      selected_tool_name: typeof rawBody.selectedToolName === "string" ? rawBody.selectedToolName : null,
+      tool_args: rawBody.toolArgs && typeof rawBody.toolArgs === "object" ? rawBody.toolArgs : null,
+    };
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
-    const runId = crypto.randomUUID();
-
-    const sendEvent = (event: RunEvent) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
-    };
-
-    sendEvent({ type: "run.created", run_id: runId, conversation_id: convId, model, mode });
-
-    const SUMMARY_THRESHOLD = 20;
-    const RECENT_MESSAGES_TO_KEEP = 8;
-
-    if (chatMessages.length > SUMMARY_THRESHOLD) {
-      const olderMessages = chatMessages.slice(0, chatMessages.length - RECENT_MESSAGES_TO_KEEP);
-      const transcript = olderMessages.map((m) => {
-        const roleLabel = m.role === "user" ? "User" : "Assistant";
-        const text = typeof m.content === "string"
-          ? m.content
-          : Array.isArray(m.content)
-            ? (m.content as Array<{ type: string; text?: string }>)
-                .filter((b) => b.type === "text" && b.text).map((b) => b.text).join(" ")
-            : "";
-        return `${roleLabel}: ${text.slice(0, 500)}`;
-      }).join("\n\n");
-
-      try {
-        const summaryResult = await anthropic.messages.create({
-          model: "claude-haiku-4-5",
-          max_tokens: 512,
-          messages: [{
-            role: "user",
-            content: `Summarize the following conversation history into a concise paragraph (max 300 words) that captures the key topics, decisions, and context needed to continue the conversation:\n\n${transcript}\n\nSummary:`,
-          }],
-        });
-        const summaryText = summaryResult.content[0]?.type === "text" ? summaryResult.content[0].text.trim() : "";
-        if (summaryText) {
-          chatMessages.splice(0, olderMessages.length,
-            { role: "user", content: `[Earlier conversation summary: ${summaryText}]` },
-            { role: "assistant", content: "Understood, I'll keep that context in mind." }
-          );
-        }
-      } catch {
-        // ignore summarization failure
-      }
-    }
+    const controller = new AbortController();
+    req.on("close", () => controller.abort());
 
     let fullResponse = "";
 
-    if (mode === "agent") {
-      sendEvent({ type: "model.started", run_id: runId });
-
-      const mcpToolDefs = await buildToolDefinitions();
-      const providerTools = mcpToolDefs.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
-
-      type ToolUseBlock = { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
-      type ToolResultBlock = { type: "tool_result"; tool_use_id: string; content: string };
-      type ContentPart = string | { type: string; [k: string]: unknown };
-      type LoopMsg = { role: "user" | "assistant"; content: ContentPart | ContentPart[] };
-
-      let loopMessages: LoopMsg[] = [...chatMessages];
-      let loopCount = 0;
-      const MAX_LOOPS = 10;
-
-      const connectedServers = await db
-        .select({ id: mcpServers.id, name: mcpServers.name })
-        .from(mcpServers)
-        .where(eq(mcpServers.enabled, true));
-
-      sendEvent({ type: "thinking.started", run_id: runId, message: "Planning..." });
-      if (connectedServers.length > 0) {
-        sendEvent({ type: "thinking.delta", run_id: runId, content: `Connected servers: ${connectedServers.map(s => s.name).join(", ")}` });
-      } else {
-        sendEvent({ type: "thinking.delta", run_id: runId, content: "No MCP servers connected — will respond from knowledge only" });
-      }
-      if (providerTools.length > 0) {
-        const toolNames = providerTools.slice(0, 8).map(t => t.name.split("__")[1] ?? t.name);
-        const extra = providerTools.length > 8 ? ` +${providerTools.length - 8} more` : "";
-        sendEvent({ type: "thinking.delta", run_id: runId, content: `Available tools: ${toolNames.join(", ")}${extra}` });
-      }
-
-      while (loopCount < MAX_LOOPS) {
-        loopCount++;
-
-        if (loopCount > 1) {
-          sendEvent({ type: "thinking.delta", run_id: runId, content: `Iteration ${loopCount}: reviewing tool results and deciding next step...` });
-        }
-
-        const requestParams: Parameters<typeof anthropic.messages.stream>[0] = {
-          model,
-          max_tokens: 8192,
-          system: AGENT_SYSTEM_PROMPT,
-          messages: loopMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
-        };
-        if (providerTools.length > 0) {
-          (requestParams as Record<string, unknown>).tools = providerTools;
-        }
-
-        const stream = anthropic.messages.stream(requestParams);
-
-        let currentTextBlock = "";
-        const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown>; _rawInput?: string }> = [];
-        let stopReason: string | null = null;
-        let thinkingEmitted = false;
-
-        for await (const event of stream) {
-          if (event.type === "content_block_start") {
-            if (event.content_block.type === "tool_use") {
-              toolUseBlocks.push({ id: event.content_block.id, name: event.content_block.name, input: {} });
-            }
-          } else if (event.type === "content_block_delta") {
-            if (event.delta.type === "text_delta") {
-              if (!thinkingEmitted) {
-                sendEvent({ type: "thinking.completed", run_id: runId });
-                thinkingEmitted = true;
-              }
-              currentTextBlock += event.delta.text;
-              fullResponse += event.delta.text;
-              sendEvent({ type: "text.delta", run_id: runId, content: event.delta.text });
-            } else if (event.delta.type === "input_json_delta") {
-              const last = toolUseBlocks[toolUseBlocks.length - 1];
-              if (last) {
-                last._rawInput = (last._rawInput ?? "") + event.delta.partial_json;
-              }
-            }
-          } else if (event.type === "message_delta") {
-            stopReason = event.delta.stop_reason ?? null;
-          }
-        }
-
-        if (!thinkingEmitted) {
-          sendEvent({ type: "thinking.completed", run_id: runId });
-        }
-
-        for (const block of toolUseBlocks) {
-          if (block._rawInput) {
-            try { block.input = JSON.parse(block._rawInput) as Record<string, unknown>; } catch { block.input = {}; }
-          }
-        }
-
-        if (currentTextBlock) {
-          loopMessages.push({ role: "assistant", content: currentTextBlock });
-        }
-
-        if (toolUseBlocks.length === 0 || stopReason === "end_turn") break;
-
-        const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
-
-        for (const block of toolUseBlocks) {
-          const underscoreIdx = block.name.indexOf("__");
-          const serverId = underscoreIdx > 0 ? parseInt(block.name.slice(0, underscoreIdx)) : null;
-          const rawToolName = underscoreIdx > 0 ? block.name.slice(underscoreIdx + 2) : block.name;
-
-          let servConfig: typeof mcpServers.$inferSelect | null = null;
-          if (serverId) {
-            const [srv] = await db.select().from(mcpServers).where(eq(mcpServers.id, serverId));
-            servConfig = srv ?? null;
-          }
-
-          sendEvent({ type: "thinking.delta", run_id: runId, content: `Selecting tool: ${rawToolName} on ${servConfig?.name ?? "unknown server"}` });
-
-          let toolRecord: typeof mcpTools.$inferSelect | null = null;
-          if (serverId) {
-            const [t] = await db.select().from(mcpTools).where(and(eq(mcpTools.serverId, serverId), eq(mcpTools.toolName, rawToolName)));
-            toolRecord = t ?? null;
-          }
-
-          if (toolRecord?.requiresApproval) {
-            sendEvent({ type: "tool.approval_required", run_id: runId, tool_id: block.id, tool_name: rawToolName, server_name: servConfig?.name ?? null, inputs: block.input });
-
-            const approvalKey = `${runId}:${block.id}`;
-            const approved = await new Promise<boolean>((resolve) => {
-              pendingApprovals.set(approvalKey, resolve);
-              setTimeout(() => {
-                if (pendingApprovals.has(approvalKey)) {
-                  pendingApprovals.delete(approvalKey);
-                  resolve(false);
-                }
-              }, 300_000);
-            });
-
-            if (!approved) {
-              const [blockedExec] = await db.insert(executions).values({
-                conversationId: convId, serverId: serverId ?? null, toolName: rawToolName,
-                status: "error", arguments: block.input,
-                errorMessage: "Rejected by user", completedAt: new Date(), durationMs: 0,
-              }).returning();
-
-              sendEvent({ type: "tool.completed", run_id: runId, tool_id: block.id, execution_id: blockedExec.id, success: false, duration_ms: 0, error: "Rejected by user" });
-              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Tool "${rawToolName}" was rejected by the user.` });
-              continue;
-            }
-          }
-
-          sendEvent({ type: "tool.started", run_id: runId, tool_id: block.id, tool_name: rawToolName, server_id: serverId, server_name: servConfig?.name ?? null, inputs: block.input });
-
-          const [execRow] = await db.insert(executions).values({
-            conversationId: convId, serverId: serverId ?? null, toolName: rawToolName, status: "running", arguments: block.input,
-          }).returning();
-
-          const execStart = Date.now();
-          let execResult: { success: boolean; content?: unknown; error?: string };
-
-          if (servConfig) {
-            const runtimeAllowCheck = await checkEndpointAllowed(servConfig.endpoint, servConfig.transportType);
-            if (!runtimeAllowCheck.allowed) {
-              execResult = { success: false, error: runtimeAllowCheck.reason ?? "Endpoint not allowed" };
-            } else {
-              execResult = await executeMcpTool(
-                {
-                  transportType: servConfig.transportType, endpoint: servConfig.endpoint,
-                  command: servConfig.command, args: (servConfig.args as string[]) ?? [],
-                  authType: servConfig.authType, authSecret: unmaskSecret(servConfig.encryptedSecret),
-                  timeout: servConfig.timeout, retryCount: servConfig.retryCount,
-                },
-                rawToolName, block.input
-              );
-            }
-          } else {
-            execResult = { success: false, error: "Server not found" };
-          }
-
-          const durationMs = Date.now() - execStart;
-          const resultText = execResult.success
-            ? JSON.stringify(execResult.content ?? "")
-            : `Error: ${execResult.error ?? "Unknown error"}`;
-
-          if (execResult.success && execResult.content) {
-            const contentStr = typeof execResult.content === "string" ? execResult.content : JSON.stringify(execResult.content, null, 2);
-            sendEvent({ type: "tool.stdout", run_id: runId, tool_id: block.id, content: contentStr.slice(0, 8192) });
-
-            const sizeBytes = Buffer.byteLength(contentStr, "utf-8");
-            if (sizeBytes > 512) {
-              const isJson = typeof execResult.content !== "string";
-              const isCode = typeof execResult.content === "string" && (
-                execResult.content.includes("function ") || execResult.content.includes("def ") ||
-                execResult.content.includes("class ") || execResult.content.includes("import ")
-              );
-              const artifactType = isJson ? "json" : isCode ? "code" : "text";
-              sendEvent({
-                type: "artifact.created",
-                run_id: runId,
-                tool_id: block.id,
-                tool_name: rawToolName,
-                artifact_type: artifactType,
-                size_bytes: sizeBytes,
-                preview: contentStr.slice(0, 200),
-              });
-            }
-          }
-
-          await db.update(executions).set({
-            status: execResult.success ? "success" : "error",
-            completedAt: new Date(), durationMs,
-            resultSummary: resultText.slice(0, 500),
-            rawResult: execResult.content as Record<string, unknown> | null,
-            errorMessage: execResult.error ?? null,
-          }).where(eq(executions.id, execRow.id));
-
-          sendEvent({ type: "tool.completed", run_id: runId, tool_id: block.id, execution_id: execRow.id, success: execResult.success, duration_ms: durationMs, ...(execResult.error ? { error: execResult.error } : {}) });
-
-          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: resultText });
-        }
-
-        if (toolUseBlocks.length > 0) {
-          loopMessages.push({
-            role: "assistant",
-            content: toolUseBlocks.map((b): ToolUseBlock => ({ type: "tool_use", id: b.id, name: b.name, input: b.input })),
-          });
-          loopMessages.push({
-            role: "user",
-            content: toolResults.map((r): ToolResultBlock => ({ type: "tool_result", tool_use_id: r.tool_use_id, content: r.content })),
-          });
-        }
-      }
-
-    } else if (mode === "tool") {
-      sendEvent({ type: "model.started", run_id: runId });
-
-      const selectedServerId = typeof rawBody.selectedServerId === "number" ? rawBody.selectedServerId : null;
-      const selectedToolName = typeof rawBody.selectedToolName === "string" ? rawBody.selectedToolName : null;
-      const toolArgs = (rawBody.toolArgs && typeof rawBody.toolArgs === "object" && !Array.isArray(rawBody.toolArgs))
-        ? (rawBody.toolArgs as Record<string, unknown>) : {};
-
-      if (!selectedServerId || !selectedToolName) {
-        sendEvent({ type: "run.failed", run_id: runId, error: "Tool mode requires selectedServerId and selectedToolName" });
-        res.end();
-        return;
-      }
-
-      const [server] = await db.select().from(mcpServers).where(eq(mcpServers.id, selectedServerId));
-      if (!server) {
-        sendEvent({ type: "run.failed", run_id: runId, error: `MCP server #${selectedServerId} not found` });
-        res.end();
-        return;
-      }
-
-      const [toolRecord] = await db.select().from(mcpTools).where(and(eq(mcpTools.serverId, selectedServerId), eq(mcpTools.toolName, selectedToolName)));
-
-      if (!toolRecord) {
-        sendEvent({ type: "run.failed", run_id: runId, error: `Tool "${selectedToolName}" not found on server "${server.name}"` });
-        res.end();
-        return;
-      }
-
-      if (!toolRecord.enabled) {
-        sendEvent({ type: "run.failed", run_id: runId, error: `Tool "${selectedToolName}" is disabled` });
-        res.end();
-        return;
-      }
-
-      const toolId = `tool_${crypto.randomUUID().slice(0, 8)}`;
-
-      if (toolRecord.requiresApproval) {
-        sendEvent({ type: "tool.approval_required", run_id: runId, tool_id: toolId, tool_name: selectedToolName, server_name: server.name, inputs: toolArgs });
-
-        const approvalKey = `${runId}:${toolId}`;
-        const approved = await new Promise<boolean>((resolve) => {
-          pendingApprovals.set(approvalKey, resolve);
-          setTimeout(() => {
-            if (pendingApprovals.has(approvalKey)) {
-              pendingApprovals.delete(approvalKey);
-              resolve(false);
-            }
-          }, 300_000);
-        });
-
-        if (!approved) {
-          sendEvent({ type: "run.failed", run_id: runId, error: `Tool "${selectedToolName}" was rejected by the user.` });
-          res.end();
-          return;
-        }
-      }
-
-      sendEvent({ type: "tool.started", run_id: runId, tool_id: toolId, tool_name: selectedToolName, server_id: server.id, server_name: server.name, inputs: toolArgs });
-
-      const [execution] = await db.insert(executions).values({
-        conversationId: convId, serverId: server.id, toolName: selectedToolName, status: "running", startedAt: new Date(),
-      }).returning();
-
-      const execStart = Date.now();
-      let execResult: import("../../lib/mcp-gateway").McpExecuteResult | null = null;
-      let execSuccess = false;
-      let execError = "";
-
-      const runtimeAllowCheck = await checkEndpointAllowed(server.endpoint, server.transportType);
-      if (!runtimeAllowCheck.allowed) {
-        execError = runtimeAllowCheck.reason ?? "Endpoint not allowed by domain allowlist";
-      } else {
-        try {
-          execResult = await executeMcpTool(
-            {
-              transportType: server.transportType, endpoint: server.endpoint, command: server.command,
-              args: (server.args as string[]) ?? [], authType: server.authType,
-              authSecret: unmaskSecret(server.encryptedSecret), timeout: server.timeout, retryCount: server.retryCount,
-            },
-            selectedToolName, toolArgs
-          );
-          execSuccess = execResult.success;
-        } catch (err) {
-          execError = err instanceof Error ? err.message : String(err);
-        }
-      }
-
-      const durationMs = Date.now() - execStart;
-      const resultText = execResult
-        ? (typeof execResult.content === "string" ? execResult.content : JSON.stringify(execResult.content ?? "")).slice(0, 500)
-        : execError;
-
-      if (execSuccess && execResult?.content) {
-        const contentStr = typeof execResult.content === "string" ? execResult.content : JSON.stringify(execResult.content, null, 2);
-        sendEvent({ type: "tool.stdout", run_id: runId, tool_id: toolId, content: contentStr.slice(0, 8192) });
-      }
-
-      await db.update(executions).set({
-        status: execSuccess ? "success" : "error", completedAt: new Date(), durationMs,
-        resultSummary: resultText.slice(0, 500),
-        rawResult: execResult?.content as Record<string, unknown> | null,
-        errorMessage: execSuccess ? null : execError || resultText,
-      }).where(eq(executions.id, execution.id));
-
-      sendEvent({ type: "tool.completed", run_id: runId, tool_id: toolId, execution_id: execution.id, success: execSuccess, duration_ms: durationMs, ...(execError ? { error: execError } : {}) });
-
-      fullResponse = execSuccess
-        ? `Executed **${selectedToolName}** on **${server.name}** in ${durationMs}ms.\n\n**Result:**\n\`\`\`json\n${resultText}\n\`\`\``
-        : `Tool **${selectedToolName}** on **${server.name}** failed: ${execError || resultText}`;
-
-      sendEvent({ type: "text.delta", run_id: runId, content: fullResponse });
-
-    } else {
-      sendEvent({ type: "model.started", run_id: runId });
-
-      const stream = anthropic.messages.stream({
-        model, max_tokens: 8192,
-        messages: chatMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
+    try {
+      const agentResp = await fetch(`${AGENT_BACKEND_URL}/agent/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(agentPayload),
+        signal: controller.signal,
       });
 
-      for await (const event of stream) {
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          fullResponse += event.delta.text;
-          sendEvent({ type: "text.delta", run_id: runId, content: event.delta.text });
+      if (!agentResp.ok || !agentResp.body) {
+        const errText = await agentResp.text().catch(() => "Agent backend error");
+        res.write(`data: ${JSON.stringify({ type: "run.failed", run_id: "unknown", error: errText })}\n\n`);
+        res.end();
+        return;
+      }
+
+      const reader = agentResp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          if (trimmed.startsWith("data: ")) {
+            const dataStr = trimmed.slice(6);
+            res.write(`data: ${dataStr}\n\n`);
+
+            try {
+              const evt = JSON.parse(dataStr);
+              if (evt.type === "text.delta" && evt.content) {
+                fullResponse += evt.content;
+              }
+            } catch { /* not JSON, pass through */ }
+          }
         }
+      }
+
+      if (buffer.trim()) {
+        const trimmed = buffer.trim();
+        if (trimmed.startsWith("data: ")) {
+          res.write(`data: ${trimmed.slice(6)}\n\n`);
+          try {
+            const evt = JSON.parse(trimmed.slice(6));
+            if (evt.type === "text.delta" && evt.content) {
+              fullResponse += evt.content;
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        req.log.error({ err }, "Agent proxy stream error");
+        try {
+          res.write(`data: ${JSON.stringify({ type: "run.failed", run_id: "unknown", error: "Stream error occurred" })}\n\n`);
+        } catch { /* ignore */ }
       }
     }
 
-    await db.insert(messages).values({ conversationId: convId, role: "assistant", content: fullResponse, model });
-    await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, convId));
+    if (fullResponse) {
+      await db.insert(messages).values({ conversationId: convId, role: "assistant", content: fullResponse, model });
+      await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, convId));
+    }
 
-    sendEvent({ type: "run.completed", run_id: runId });
     res.end();
   } catch (err) {
     req.log.error({ err }, "Failed to send message");

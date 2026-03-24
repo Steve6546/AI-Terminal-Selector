@@ -47,7 +47,17 @@
 
 ```text
 artifacts/
-├── api-server/         # Express API server (port 8080)
+├── api-server/         # Express API server (port 8080) — thin proxy for chat, CRUD for everything else
+├── agent-backend/      # Python FastAPI agent core (port 9000) — provider routing, agent runtime, tool execution
+│   ├── app/
+│   │   ├── agent/      # AgentRuntime, ToolExecutor, ApprovalManager
+│   │   ├── providers/  # BaseProvider, AnthropicProvider, OpenAIProvider, ProviderRouter
+│   │   ├── mcp/        # MCP gateway (tool discovery, execution)
+│   │   ├── models/     # Pydantic request/response/event models
+│   │   ├── services/   # DB persistence client, TaskManager
+│   │   ├── config.py   # Settings via pydantic-settings
+│   │   └── main.py     # FastAPI app entry point
+│   └── main.py         # uvicorn runner
 └── agent-chat-ui/      # React + Vite frontend (port from $PORT)
 lib/
 ├── api-spec/           # OpenAPI spec + Orval codegen config
@@ -99,10 +109,19 @@ scripts/                # Utility scripts
 - `PATCH/DELETE /api/database-connections/:id` — update/delete DB connection
 - `POST /api/database-connections/:id/test` — test DB connection (PostgreSQL)
 
+## Architecture (Phase 2)
+
+Chat messages flow: Frontend → Node.js API (thin proxy) → Python agent-backend → SSE stream back.
+
+- **Node.js API** handles CRUD, message persistence, MCP server/tool lookups, endpoint allowlist enforcement, then proxies to Python
+- **Python agent-backend** handles provider routing (Anthropic/OpenAI), agent runtime with tool loop, approval management, SSE event streaming
+- **Internal routes** (`/api/internal/*`) are localhost-only and used by Python to persist runs, tool calls, approvals, and executions back to PostgreSQL
+
 ## Streaming (SSE)
 
 Chat messages stream via SSE at `POST /api/conversations/:id/messages`.
-Format: `data: {"content":"..."}` chunks, then `data: {"done":true}`.
+Node.js proxies this to Python's `POST /agent/chat` which streams SSE events.
+Event types: `run.created`, `model.started`, `thinking.*`, `text.delta`, `tool.*`, `artifact.created`, `run.completed/failed`.
 The frontend hook `useChatStream` consumes this with `ReadableStream`.
 
 ## Frontend Pages
@@ -141,5 +160,8 @@ cd lib/db && npx drizzle-kit push
 - `DATABASE_URL` — PostgreSQL connection string (auto-set by Replit)
 - `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` — Anthropic API base URL (auto-set by Replit AI integration)
 - `AI_INTEGRATIONS_ANTHROPIC_API_KEY` — Anthropic API key (auto-set by Replit AI integration)
+- `AI_INTEGRATIONS_OPENAI_BASE_URL` — OpenAI API base URL (for Python provider router)
+- `AI_INTEGRATIONS_OPENAI_API_KEY` — OpenAI API key (for Python provider router)
+- `AGENT_BACKEND_PORT` — Python agent backend port (default: 9000)
 - `PORT` — Port for each artifact's dev server (auto-set by Replit)
 - `BASE_PATH` — Base URL path for the artifact (auto-set by Replit)

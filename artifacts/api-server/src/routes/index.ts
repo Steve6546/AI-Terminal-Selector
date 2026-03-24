@@ -11,6 +11,7 @@ import attachmentsRouter from "./attachments";
 import terminalTokenRouter from "./terminal-token";
 import databaseConnectionsRouter from "./database-connections";
 import mcpAgentRouter from "./mcp-agent/chat";
+import internalRouter from "./internal";
 
 const router: IRouter = Router();
 
@@ -31,5 +32,6 @@ router.use(attachmentsRouter);
 router.use(terminalTokenRouter);
 router.use(databaseConnectionsRouter);
 router.use(mcpAgentRouter);
+router.use(internalRouter);
 
 export default router;
