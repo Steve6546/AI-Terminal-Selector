@@ -1,4 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { eq } from "drizzle-orm";
+import { db, toolCalls } from "@workspace/db";
 import { handleRouteError } from "../lib/handle-error";
 import * as runService from "../services/run.service";
 import { recordToolExecution } from "../services/metrics.service";
@@ -49,10 +51,18 @@ router.post("/internal/tool-calls", async (req, res) => {
 
 router.patch("/internal/tool-calls/:id", async (req, res) => {
   try {
+    const tcId = parseInt(req.params.id);
     const data = req.body as { toolName?: string; status?: string; durationMs?: number };
-    await runService.updateToolCall(parseInt(req.params.id), req.body);
-    if (data.toolName && (data.status === "success" || data.status === "error")) {
-      recordToolExecution(data.toolName, data.status === "success", data.durationMs ?? 0);
+    await runService.updateToolCall(tcId, req.body);
+    if (data.status === "success" || data.status === "error") {
+      let toolName = data.toolName;
+      if (!toolName) {
+        const [row] = await db.select({ toolName: toolCalls.toolName }).from(toolCalls).where(eq(toolCalls.id, tcId));
+        toolName = row?.toolName;
+      }
+      if (toolName) {
+        recordToolExecution(toolName, data.status === "success", data.durationMs ?? 0);
+      }
     }
     res.json({ ok: true });
   } catch (err) {

@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { handleRouteError } from "../../lib/handle-error";
 import * as executionService from "../../services/execution.service";
 import { writeAuditEvent } from "../../services/audit.service";
-import { recordToolExecution } from "../../services/metrics.service";
 
 const router: IRouter = Router();
 
@@ -31,7 +30,6 @@ router.post("/mcp-tools/:toolId/execute", async (req, res) => {
     }
 
     const exec = result.execution!;
-    recordToolExecution(exec.toolName, exec.status === "success", exec.durationMs ?? 0);
 
     await writeAuditEvent({
       eventType: "tool.executed",
