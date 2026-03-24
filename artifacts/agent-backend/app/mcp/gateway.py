@@ -157,12 +157,21 @@ async def _collect_capabilities(session: ClientSession) -> McpDiscoveryResult:
     return McpDiscoveryResult(tools=tools, resources=resources, prompts=prompts)
 
 
+_AUTH_ERROR_PATTERNS = ["401", "403", "unauthorized", "forbidden", "auth", "permission denied", "access denied"]
+
+
+def _is_auth_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(p in msg for p in _AUTH_ERROR_PATTERNS)
+
+
 async def _deep_health_session(session: ClientSession) -> McpDeepHealthResult:
     capabilities = {}
     tool_count = 0
     resource_count = 0
     prompt_count = 0
     has_failure = False
+    has_auth_failure = False
 
     t0 = time.monotonic()
     try:
@@ -174,6 +183,8 @@ async def _deep_health_session(session: ClientSession) -> McpDeepHealthResult:
         )
     except Exception as exc:
         has_failure = True
+        if _is_auth_error(exc):
+            has_auth_failure = True
         capabilities["tools"] = McpCapabilityResult(
             name="tools", available=False, error=str(exc),
             latency_ms=int((time.monotonic() - t0) * 1000),
@@ -189,6 +200,8 @@ async def _deep_health_session(session: ClientSession) -> McpDeepHealthResult:
         )
     except Exception as exc:
         has_failure = True
+        if _is_auth_error(exc):
+            has_auth_failure = True
         capabilities["resources"] = McpCapabilityResult(
             name="resources", available=False, error=str(exc),
             latency_ms=int((time.monotonic() - t1) * 1000),
@@ -204,17 +217,29 @@ async def _deep_health_session(session: ClientSession) -> McpDeepHealthResult:
         )
     except Exception as exc:
         has_failure = True
+        if _is_auth_error(exc):
+            has_auth_failure = True
         capabilities["prompts"] = McpCapabilityResult(
             name="prompts", available=False, error=str(exc),
             latency_ms=int((time.monotonic() - t2) * 1000),
         )
 
-    status = "degraded" if has_failure else "connected"
-    message = "All capabilities available" if not has_failure else "Some capabilities unavailable"
+    if has_auth_failure:
+        status = "auth_required"
+        message = "Authentication failed for one or more capabilities"
+        auth_ok = False
+    elif has_failure:
+        status = "degraded"
+        message = "Some capabilities unavailable"
+        auth_ok = True
+    else:
+        status = "connected"
+        message = "All capabilities available"
+        auth_ok = True
 
     return McpDeepHealthResult(
         status=status, latency_ms=0, message=message,
-        capabilities=capabilities,
+        capabilities=capabilities, auth_ok=auth_ok,
         tool_count=tool_count, resource_count=resource_count, prompt_count=prompt_count,
     )
 
