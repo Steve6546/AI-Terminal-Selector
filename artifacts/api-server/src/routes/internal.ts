@@ -1,14 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { db } from "@workspace/db";
-import {
-  runs,
-  runEvents,
-  toolCalls,
-  approvalDecisions,
-  executions,
-} from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { handleRouteError } from "../lib/handle-error";
+import * as runService from "../services/run.service";
 
 const router: IRouter = Router();
 
@@ -26,18 +18,8 @@ router.use("/internal", requireLocalhost);
 
 router.post("/internal/runs", async (req, res) => {
   try {
-    const { runId, conversationId, model, mode, status } = req.body;
-    const [row] = await db
-      .insert(runs)
-      .values({
-        runId,
-        conversationId,
-        model,
-        mode: mode || "agent",
-        status: status || "running",
-      })
-      .returning();
-    res.status(201).json({ id: row.id, runId: row.runId });
+    const result = await runService.createRun(req.body);
+    res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create run");
     handleRouteError(res, err, "Internal server error");
@@ -46,21 +28,7 @@ router.post("/internal/runs", async (req, res) => {
 
 router.patch("/internal/runs/:runId", async (req, res) => {
   try {
-    const { runId } = req.params;
-    const updates: Record<string, unknown> = {};
-    if (req.body.status) updates.status = req.body.status;
-    if (req.body.tokensIn !== undefined) updates.tokensIn = req.body.tokensIn;
-    if (req.body.tokensOut !== undefined) updates.tokensOut = req.body.tokensOut;
-    if (req.body.errorMessage !== undefined)
-      updates.errorMessage = req.body.errorMessage;
-    if (
-      req.body.status === "completed" ||
-      req.body.status === "failed"
-    ) {
-      updates.completedAt = new Date();
-    }
-
-    await db.update(runs).set(updates).where(eq(runs.runId, runId));
+    await runService.updateRun(req.params.runId, req.body);
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Failed to update run");
@@ -70,19 +38,8 @@ router.patch("/internal/runs/:runId", async (req, res) => {
 
 router.post("/internal/tool-calls", async (req, res) => {
   try {
-    const { runId, serverId, toolName, arguments: args, status, requiresApproval } = req.body;
-    const [row] = await db
-      .insert(toolCalls)
-      .values({
-        runId: runId || null,
-        serverId: serverId || null,
-        toolName,
-        arguments: args || {},
-        status: status || "pending",
-        requiresApproval: requiresApproval || false,
-      })
-      .returning();
-    res.status(201).json({ id: row.id });
+    const result = await runService.createToolCall(req.body);
+    res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create tool call");
     handleRouteError(res, err, "Internal server error");
@@ -91,25 +48,7 @@ router.post("/internal/tool-calls", async (req, res) => {
 
 router.patch("/internal/tool-calls/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
-    const updates: Record<string, unknown> = {};
-    if (req.body.status) updates.status = req.body.status;
-    if (req.body.result !== undefined) updates.result = req.body.result;
-    if (req.body.resultSummary !== undefined)
-      updates.resultSummary = req.body.resultSummary;
-    if (req.body.errorMessage !== undefined)
-      updates.errorMessage = req.body.errorMessage;
-    if (req.body.approvalDecision !== undefined)
-      updates.approvalDecision = req.body.approvalDecision;
-    if (req.body.durationMs !== undefined) updates.durationMs = req.body.durationMs;
-    if (
-      req.body.status === "success" ||
-      req.body.status === "error"
-    ) {
-      updates.completedAt = new Date();
-    }
-
-    await db.update(toolCalls).set(updates).where(eq(toolCalls.id, id));
+    await runService.updateToolCall(parseInt(req.params.id), req.body);
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Failed to update tool call");
@@ -119,29 +58,8 @@ router.patch("/internal/tool-calls/:id", async (req, res) => {
 
 router.post("/internal/approvals", async (req, res) => {
   try {
-    const {
-      runId,
-      toolCallId,
-      toolName,
-      serverName,
-      inputs,
-      decision,
-      reason,
-    } = req.body;
-    const [row] = await db
-      .insert(approvalDecisions)
-      .values({
-        runId: runId || null,
-        toolCallId: toolCallId || null,
-        toolName,
-        serverName: serverName || null,
-        inputs: inputs || {},
-        decision,
-        actor: "user",
-        reason: reason || null,
-      })
-      .returning();
-    res.status(201).json({ id: row.id });
+    const result = await runService.createApproval(req.body);
+    res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create approval");
     handleRouteError(res, err, "Internal server error");
@@ -150,34 +68,8 @@ router.post("/internal/approvals", async (req, res) => {
 
 router.post("/internal/executions", async (req, res) => {
   try {
-    const {
-      conversationId,
-      serverId,
-      toolName,
-      status,
-      arguments: args,
-      resultSummary,
-      rawResult,
-      errorMessage,
-      durationMs,
-    } = req.body;
-    const [row] = await db
-      .insert(executions)
-      .values({
-        conversationId,
-        serverId: serverId || null,
-        toolName,
-        status,
-        arguments: args || {},
-        resultSummary: resultSummary || null,
-        rawResult: rawResult || null,
-        errorMessage: errorMessage || null,
-        durationMs: durationMs || 0,
-        completedAt:
-          status === "success" || status === "error" ? new Date() : null,
-      })
-      .returning();
-    res.status(201).json({ id: row.id });
+    const result = await runService.createExecution(req.body);
+    res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create execution");
     handleRouteError(res, err, "Internal server error");
@@ -186,16 +78,8 @@ router.post("/internal/executions", async (req, res) => {
 
 router.post("/internal/run-events", async (req, res) => {
   try {
-    const { runId, eventType, data } = req.body;
-    const [row] = await db
-      .insert(runEvents)
-      .values({
-        runId,
-        eventType,
-        data: data || null,
-      })
-      .returning();
-    res.status(201).json({ id: row.id });
+    const result = await runService.createRunEvent(req.body);
+    res.status(201).json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to create run event");
     handleRouteError(res, err, "Internal server error");
@@ -204,23 +88,7 @@ router.post("/internal/run-events", async (req, res) => {
 
 router.patch("/internal/executions/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
-    const updates: Record<string, unknown> = {};
-    if (req.body.status) updates.status = req.body.status;
-    if (req.body.resultSummary !== undefined)
-      updates.resultSummary = req.body.resultSummary;
-    if (req.body.rawResult !== undefined) updates.rawResult = req.body.rawResult;
-    if (req.body.errorMessage !== undefined)
-      updates.errorMessage = req.body.errorMessage;
-    if (req.body.durationMs !== undefined) updates.durationMs = req.body.durationMs;
-    if (
-      req.body.status === "success" ||
-      req.body.status === "error"
-    ) {
-      updates.completedAt = new Date();
-    }
-
-    await db.update(executions).set(updates).where(eq(executions.id, id));
+    await runService.updateExecution(parseInt(req.params.id), req.body);
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Failed to update execution");

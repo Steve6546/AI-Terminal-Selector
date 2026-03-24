@@ -109,13 +109,35 @@ scripts/                # Utility scripts
 - `PATCH/DELETE /api/database-connections/:id` — update/delete DB connection
 - `POST /api/database-connections/:id/test` — test DB connection (PostgreSQL)
 
-## Architecture (Phase 2)
+## Architecture (Phase 2 + Phase 3)
 
 Chat messages flow: Frontend → Node.js API (thin proxy) → Python agent-backend → SSE stream back.
 
 - **Node.js API** handles CRUD, message persistence, MCP server/tool lookups, endpoint allowlist enforcement, then proxies to Python
 - **Python agent-backend** handles provider routing (Anthropic/OpenAI), agent runtime with tool loop, approval management, SSE event streaming
 - **Internal routes** (`/api/internal/*`) are localhost-only and used by Python to persist runs, tool calls, approvals, and executions back to PostgreSQL
+
+### Phase 3: Service Layer & Observability
+
+Routes are thin controllers; all business logic lives in `artifacts/api-server/src/services/`:
+
+| Service | Responsibility |
+|---------|---------------|
+| `conversation.service` | Conversation CRUD, message handling, chat proxy |
+| `mcp-discovery.service` | MCP server CRUD, tool discovery, health checks |
+| `execution.service` | Tool execution listing & filtering |
+| `run.service` | Agent run lifecycle (create/update runs, tool calls, approvals, events) |
+| `provider.service` | AI provider settings & model routing |
+| `settings.service` | App settings get/update |
+| `system.service` | System status aggregation |
+| `audit.service` | Audit event logging (`writeAuditEvent()`) |
+| `metrics.service` | Tool execution metrics (latency, counts, error rates) |
+| `stream-manager` | Unified SSE connection manager (replaces per-client EventEmitter) |
+
+Observability:
+- **Trace ID middleware** (`lib/trace-middleware.ts`): Generates UUID per request, sets `X-Trace-Id` response header, available as `req.traceId`
+- **Audit events**: Stored in `audit_events` table, written on settings changes and other important mutations
+- **Metrics endpoint**: `GET /api/system/metrics` returns tool metrics + active stream client count
 
 ## Streaming (SSE)
 
