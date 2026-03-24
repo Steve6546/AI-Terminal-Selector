@@ -9,6 +9,7 @@ export type RunEventType =
   | "thinking.started" | "thinking.delta" | "thinking.completed"
   | "text.delta"
   | "tool.started" | "tool.stdout" | "tool.completed" | "tool.approval_required"
+  | "artifact.created"
   | "run.completed" | "run.failed";
 
 export interface RunEvent {
@@ -239,6 +240,10 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                   });
                   break;
                 }
+
+                case "artifact.created":
+                  // Large tool result — stdout already surfaced via tool.stdout event
+                  break;
 
                 case "run.completed":
                   break outer;

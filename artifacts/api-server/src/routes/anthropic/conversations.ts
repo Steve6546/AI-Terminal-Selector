@@ -32,8 +32,34 @@ type RunEvent =
   | { type: "tool.stdout"; run_id: string; tool_id: string; content: string }
   | { type: "tool.completed"; run_id: string; tool_id: string; execution_id: number | null; success: boolean; duration_ms: number; error?: string }
   | { type: "tool.approval_required"; run_id: string; tool_id: string; tool_name: string; server_name: string | null; inputs: Record<string, unknown> }
+  | { type: "artifact.created"; run_id: string; tool_id: string; tool_name: string; artifact_type: "json" | "text" | "code"; size_bytes: number; preview: string }
   | { type: "run.completed"; run_id: string }
   | { type: "run.failed"; run_id: string; error: string };
+
+// ─── Agent system prompt ────────────────────────────────────────────────────
+const AGENT_SYSTEM_PROMPT = `You are an expert AI agent with access to MCP (Model Context Protocol) tools and servers.
+
+## Your capabilities
+- Discover and execute tools across all connected MCP servers
+- Chain multiple tools together to complete complex, multi-step workflows
+- Analyze data, manage servers, automate tasks, and interact with external APIs
+
+## How you work
+1. **Understand** the user's intent completely. If ambiguous, ask one focused clarifying question.
+2. **Plan** which servers and tools you will use, and in what order.
+3. **Execute** tools systematically. Check each result before proceeding to the next step.
+4. **Handle errors** gracefully — if a tool fails, explain why and try an alternative approach.
+5. **Report** progress at each step with clear, concise summaries.
+
+## Tool selection
+- Tools are namespaced as \`{serverId}__{toolName}\`. Always use the full namespaced form.
+- Prefer tools that match the user's intent most precisely.
+- For destructive or irreversible operations, always confirm with the user before executing.
+
+## Quality standards
+- Never fabricate tool results. If a tool returns nothing useful, say so.
+- Always provide a clear final summary of what was accomplished and any follow-up suggestions.
+- Keep your reasoning transparent — briefly explain why you are choosing each tool.`;
 
 // ─── Conversation CRUD ─────────────────────────────────────────────────────
 
@@ -330,20 +356,36 @@ router.post("/conversations/:id/messages", async (req, res) => {
       let loopCount = 0;
       const MAX_LOOPS = 10;
 
-      // Emit planning thinking
-      sendEvent({ type: "thinking.started", run_id: runId, message: "Agent is analyzing your request and planning next steps..." });
-      sendEvent({ type: "thinking.delta", run_id: runId, content: `Planning with ${anthropicTools.length} available tool${anthropicTools.length !== 1 ? "s" : ""}${anthropicTools.length > 0 ? `: ${anthropicTools.slice(0, 5).map(t => t.name.split("__")[1] ?? t.name).join(", ")}${anthropicTools.length > 5 ? ` +${anthropicTools.length - 5} more` : ""}` : ""}` });
+      // Fetch connected servers for planning context
+      const connectedServers = await db
+        .select({ id: mcpServers.id, name: mcpServers.name })
+        .from(mcpServers)
+        .where(eq(mcpServers.enabled, true));
+
+      // Emit structured planning thinking
+      sendEvent({ type: "thinking.started", run_id: runId, message: "Planning..." });
+      if (connectedServers.length > 0) {
+        sendEvent({ type: "thinking.delta", run_id: runId, content: `Connected servers: ${connectedServers.map(s => s.name).join(", ")}` });
+      } else {
+        sendEvent({ type: "thinking.delta", run_id: runId, content: "No MCP servers connected — will respond from knowledge only" });
+      }
+      if (anthropicTools.length > 0) {
+        const toolNames = anthropicTools.slice(0, 8).map(t => t.name.split("__")[1] ?? t.name);
+        const extra = anthropicTools.length > 8 ? ` +${anthropicTools.length - 8} more` : "";
+        sendEvent({ type: "thinking.delta", run_id: runId, content: `Available tools: ${toolNames.join(", ")}${extra}` });
+      }
 
       while (loopCount < MAX_LOOPS) {
         loopCount++;
 
         if (loopCount > 1) {
-          sendEvent({ type: "thinking.delta", run_id: runId, content: `Loop ${loopCount}: processing tool results and deciding next action...` });
+          sendEvent({ type: "thinking.delta", run_id: runId, content: `Iteration ${loopCount}: reviewing tool results and deciding next step...` });
         }
 
         const requestParams: Parameters<typeof anthropic.messages.stream>[0] = {
           model,
           max_tokens: 8192,
+          system: AGENT_SYSTEM_PROMPT,
           messages: loopMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
         };
         if (anthropicTools.length > 0) {
@@ -489,6 +531,26 @@ router.post("/conversations/:id/messages", async (req, res) => {
           if (execResult.success && execResult.content) {
             const contentStr = typeof execResult.content === "string" ? execResult.content : JSON.stringify(execResult.content, null, 2);
             sendEvent({ type: "tool.stdout", run_id: runId, tool_id: block.id, content: contentStr.slice(0, 8192) });
+
+            // Emit artifact.created for large structured results
+            const sizeBytes = Buffer.byteLength(contentStr, "utf-8");
+            if (sizeBytes > 512) {
+              const isJson = typeof execResult.content !== "string";
+              const isCode = typeof execResult.content === "string" && (
+                execResult.content.includes("function ") || execResult.content.includes("def ") ||
+                execResult.content.includes("class ") || execResult.content.includes("import ")
+              );
+              const artifactType = isJson ? "json" : isCode ? "code" : "text";
+              sendEvent({
+                type: "artifact.created",
+                run_id: runId,
+                tool_id: block.id,
+                tool_name: rawToolName,
+                artifact_type: artifactType,
+                size_bytes: sizeBytes,
+                preview: contentStr.slice(0, 200),
+              });
+            }
           }
 
           await db.update(executions).set({

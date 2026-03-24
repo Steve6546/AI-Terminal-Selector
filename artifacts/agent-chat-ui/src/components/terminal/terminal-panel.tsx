@@ -2,31 +2,59 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { X, Maximize2, Minimize2 } from "lucide-react";
+import { X, Maximize2, Minimize2, Terminal as TerminalIcon, FileOutput, AlertCircle, Trash2, Copy, Check } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
+import { cn } from "@/lib/utils";
+
+type Tab = "shell" | "output" | "errors";
 
 interface TerminalPanelProps {
   onClose: () => void;
+  toolOutputLines?: string[];
+  errorLines?: string[];
 }
 
-export function TerminalPanel({ onClose }: TerminalPanelProps) {
+export function TerminalPanel({ onClose, toolOutputLines = [], errorLines = [] }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [status, setStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
+  const [shellStatus, setShellStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
+  const [activeTab, setActiveTab] = useState<Tab>("shell");
+  const [copiedOutput, setCopiedOutput] = useState(false);
+  const [copiedErrors, setCopiedErrors] = useState(false);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const errorsRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll output and errors on new content
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [toolOutputLines]);
+
+  useEffect(() => {
+    if (errorsRef.current) {
+      errorsRef.current.scrollTop = errorsRef.current.scrollHeight;
+    }
+    if (errorLines.length > 0 && activeTab !== "errors") {
+      // Badge is shown via errorLines.length check in tabs
+    }
+  }, [errorLines, activeTab]);
+
+  // Fit terminal when tab switches to shell
+  useEffect(() => {
+    if (activeTab === "shell") {
+      setTimeout(() => fitAddonRef.current?.fit(), 50);
+    }
+  }, [activeTab, isMaximized]);
 
   const connect = useCallback(async () => {
     if (!containerRef.current) return;
 
-    // Cleanup existing terminal
-    if (terminalRef.current) {
-      terminalRef.current.dispose();
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+    if (terminalRef.current) terminalRef.current.dispose();
+    if (wsRef.current) wsRef.current.close();
 
     const term = new Terminal({
       theme: {
@@ -65,14 +93,12 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     const webLinksAddon = new WebLinksAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
-
     term.open(containerRef.current);
     fitAddon.fit();
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Fetch one-time auth token then connect WebSocket
     let token: string | null = null;
     try {
       const resp = await fetch("/api/terminal/token", {
@@ -82,7 +108,7 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
       token = data.token;
     } catch {
       term.write("\r\n\x1b[31m[Could not obtain terminal token — is the API server running?]\x1b[0m\r\n");
-      setStatus("disconnected");
+      setShellStatus("disconnected");
       return;
     }
 
@@ -92,49 +118,39 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setStatus("connected");
+      setShellStatus("connected");
       ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     };
 
     ws.onmessage = (event: MessageEvent<string>) => {
       try {
-        const msg = JSON.parse(event.data) as {
-          type: "output" | "exit" | "error";
-          data?: string;
-          message?: string;
-        };
+        const msg = JSON.parse(event.data) as { type: "output" | "exit" | "error"; data?: string; message?: string };
         if (msg.type === "output" && msg.data) {
           term.write(msg.data);
         } else if (msg.type === "exit") {
-          term.write("\r\n\x1b[33m[Terminal session ended. Reconnecting...]\x1b[0m\r\n");
-          setStatus("disconnected");
+          term.write("\r\n\x1b[33m[Session ended. Reconnecting...]\x1b[0m\r\n");
+          setShellStatus("disconnected");
           setTimeout(connect, 2000);
         } else if (msg.type === "error") {
           term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
-          setStatus("disconnected");
+          setShellStatus("disconnected");
         }
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
     };
 
     ws.onerror = () => {
       term.write("\r\n\x1b[31m[WebSocket error — is the server running?]\x1b[0m\r\n");
-      setStatus("disconnected");
+      setShellStatus("disconnected");
     };
 
-    ws.onclose = () => {
-      setStatus("disconnected");
-    };
+    ws.onclose = () => setShellStatus("disconnected");
 
-    // Forward keyboard input to shell
     term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "input", data }));
       }
     });
 
-    // Handle terminal resize
     term.onResize(({ cols, rows }) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "resize", cols, rows }));
@@ -142,7 +158,6 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     });
   }, []);
 
-  // Initial connection
   useEffect(() => {
     connect();
     return () => {
@@ -151,41 +166,94 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     };
   }, [connect]);
 
-  // Handle container resize via ResizeObserver
   useEffect(() => {
     if (!containerRef.current) return;
-    const observer = new ResizeObserver(() => {
-      fitAddonRef.current?.fit();
-    });
+    const observer = new ResizeObserver(() => fitAddonRef.current?.fit());
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
 
+  const copyText = (text: string, setCopied: (v: boolean) => void) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const tabs: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    {
+      id: "shell",
+      label: "Shell",
+      icon: <TerminalIcon className="w-3.5 h-3.5" />,
+    },
+    {
+      id: "output",
+      label: "Tool Output",
+      icon: <FileOutput className="w-3.5 h-3.5" />,
+      badge: toolOutputLines.length,
+    },
+    {
+      id: "errors",
+      label: "Errors",
+      icon: <AlertCircle className="w-3.5 h-3.5" />,
+      badge: errorLines.length,
+    },
+  ];
+
   return (
     <div
-      className={`flex flex-col bg-[#0a0a0f] border-t border-border/80 transition-all duration-200 ${
+      className={cn(
+        "flex flex-col bg-[#0a0a0f] border-t border-border/80 transition-all duration-200",
         isMaximized ? "fixed inset-0 z-50" : "h-80"
-      }`}
+      )}
     >
-      {/* Terminal Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border/60 bg-card/50 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1.5">
+      {/* Header */}
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/60 bg-card/50 shrink-0">
+        {/* macOS dots */}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1.5 pl-1">
             <div className="w-3 h-3 rounded-full bg-red-500/80" />
             <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
             <div className="w-3 h-3 rounded-full bg-green-500/80" />
           </div>
-          <span className="text-xs font-mono text-muted-foreground">bash</span>
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              status === "connected"
-                ? "bg-green-500"
-                : status === "connecting"
-                ? "bg-yellow-500 animate-pulse"
-                : "bg-red-500"
-            }`}
-          />
+
+          {/* Tabs */}
+          <div className="flex items-center gap-0.5 ml-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all relative",
+                  activeTab === tab.id
+                    ? "bg-white/10 text-white"
+                    : "text-muted-foreground hover:text-white hover:bg-white/5"
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+                {tab.id === "shell" && (
+                  <span
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full ml-0.5",
+                      shellStatus === "connected" ? "bg-green-500" :
+                      shellStatus === "connecting" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
+                    )}
+                  />
+                )}
+                {tab.badge != null && tab.badge > 0 && (
+                  <span className={cn(
+                    "absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center",
+                    tab.id === "errors" ? "bg-red-500 text-white" : "bg-primary text-white"
+                  )}>
+                    {tab.badge > 9 ? "9+" : tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
+
         <div className="flex items-center gap-1">
           <button
             onClick={() => setIsMaximized((p) => !p)}
@@ -202,12 +270,91 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
         </div>
       </div>
 
-      {/* xterm.js mount point */}
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-hidden p-2"
-        style={{ minHeight: 0 }}
-      />
+      {/* Content */}
+      <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+        {/* Shell — always mounted, hidden when not active so xterm state is preserved */}
+        <div
+          ref={containerRef}
+          className={cn("h-full p-2", activeTab !== "shell" && "hidden")}
+        />
+
+        {/* Tool Output */}
+        {activeTab === "output" && (
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/5 bg-black/20 shrink-0">
+              <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
+                {toolOutputLines.length} output block{toolOutputLines.length !== 1 ? "s" : ""} from current run
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => copyText(toolOutputLines.join("\n\n"), setCopiedOutput)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  {copiedOutput ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedOutput ? "Copied" : "Copy all"}
+                </button>
+              </div>
+            </div>
+            <div
+              ref={outputRef}
+              className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3"
+            >
+              {toolOutputLines.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground/40">
+                  <FileOutput className="w-8 h-8 mb-2" />
+                  <p className="text-sm">No tool output yet</p>
+                  <p className="text-xs mt-1">Tool results will appear here when the agent runs tools</p>
+                </div>
+              ) : (
+                toolOutputLines.map((line, i) => (
+                  <pre key={i} className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-all bg-black/30 rounded-lg px-3 py-2 border border-white/5">
+                    {line}
+                  </pre>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Errors */}
+        {activeTab === "errors" && (
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/5 bg-black/20 shrink-0">
+              <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
+                {errorLines.length} error{errorLines.length !== 1 ? "s" : ""}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => copyText(errorLines.join("\n"), setCopiedErrors)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  {copiedErrors ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedErrors ? "Copied" : "Copy all"}
+                </button>
+              </div>
+            </div>
+            <div
+              ref={errorsRef}
+              className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2"
+            >
+              {errorLines.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground/40">
+                  <AlertCircle className="w-8 h-8 mb-2" />
+                  <p className="text-sm">No errors</p>
+                  <p className="text-xs mt-1">Stream and tool errors will appear here</p>
+                </div>
+              ) : (
+                errorLines.map((line, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs font-mono text-red-400 bg-red-500/5 rounded-lg px-3 py-2 border border-red-500/20">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <span className="break-all whitespace-pre-wrap">{line}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

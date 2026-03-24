@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench, X, FileText, Image, ChevronDown, Upload } from "lucide-react";
 import { InteractionMode } from "@/hooks/use-local-settings";
@@ -81,6 +81,25 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
 
   const { data: mcpServers } = useListMcpServers();
   const { data: mcpTools } = useListMcpTools(selectedServerId ?? 0);
+
+  // Rotating intent-aware placeholder for agent mode
+  const agentPlaceholders = [
+    "Describe a task for the agent, or paste an image...",
+    "Ask me to manage your servers...",
+    "Ask me to analyze data from your APIs...",
+    "Ask me to run a workflow across multiple tools...",
+    "Ask me to find and execute the right tool...",
+    "Describe a complex task and I'll plan it out...",
+  ];
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+
+  useEffect(() => {
+    if (mode !== "agent") return;
+    const timer = setInterval(() => {
+      setPlaceholderIdx((prev) => (prev + 1) % agentPlaceholders.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [mode]);
 
   const selectedServer = mcpServers?.find((s) => s.id === selectedServerId);
   const selectedTool = mcpTools?.find((t) => t.toolName === selectedToolName);
@@ -433,7 +452,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
             onPaste={handlePaste}
             placeholder={
               mode === "agent"
-                ? "Describe a task for the agent, or paste an image..."
+                ? agentPlaceholders[placeholderIdx]
                 : selectedToolName
                 ? `JSON args for "${selectedToolName}", e.g. { "key": "value" } (or leave empty)`
                 : "Select a server and tool above, then enter JSON args here..."
@@ -492,8 +511,17 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
           <div className="px-4 pb-2 text-xs text-red-400 font-mono">{argsError}</div>
         )}
       </div>
-      <div className="text-center mt-2">
-        <span className="text-[10px] text-muted-foreground font-mono">Agent Tool Chat uses Replit AI Integrations. Paste or drag images to attach.</span>
+      <div className="flex items-center justify-between px-2 mt-2">
+        <span className="text-[10px] text-muted-foreground/50 font-mono">
+          Agent Tool Chat uses Replit AI Integrations.
+        </span>
+        <span className="text-[10px] text-muted-foreground/50 font-mono">
+          <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10 text-[9px]">Enter ↵</kbd>
+          {" "}to send
+          {" · "}
+          <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10 text-[9px]">Shift+Enter</kbd>
+          {" "}for new line
+        </span>
       </div>
     </div>
   );

@@ -141,6 +141,32 @@ export default function ChatPage() {
 
   const hasActiveTool = liveTools.some((t) => t.phase !== "done");
 
+  // Accumulate tool output lines across the session for the Terminal Output tab
+  const [toolOutputLines, setToolOutputLines] = useState<string[]>([]);
+  const [sessionErrorLines, setSessionErrorLines] = useState<string[]>([]);
+  const seenToolStdout = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const tool of liveTools) {
+      if (tool.stdout) {
+        const key = `${tool.toolId}:${tool.stdout.length}`;
+        if (!seenToolStdout.current.has(key)) {
+          seenToolStdout.current.add(key);
+          setToolOutputLines((prev) => [
+            ...prev,
+            `[${tool.toolName}] ${tool.stdout!}`,
+          ]);
+        }
+      }
+    }
+  }, [liveTools]);
+
+  useEffect(() => {
+    if (streamError) {
+      setSessionErrorLines((prev) => [...prev, streamError.message]);
+    }
+  }, [streamError]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -444,7 +470,11 @@ export default function ChatPage() {
               exit={{ height: 0 }}
               className="overflow-hidden shrink-0"
             >
-              <TerminalPanel onClose={() => setShowTerminal(false)} />
+              <TerminalPanel
+                onClose={() => setShowTerminal(false)}
+                toolOutputLines={toolOutputLines}
+                errorLines={sessionErrorLines}
+              />
             </motion.div>
           )}
         </AnimatePresence>
