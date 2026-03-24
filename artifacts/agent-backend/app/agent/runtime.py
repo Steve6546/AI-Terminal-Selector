@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import structlog
 
@@ -11,6 +11,10 @@ from ..models.requests import ChatRequest, ServerInfo, ToolDefinition
 from ..providers.base import StreamChunk
 from ..providers.router import ProviderRouter
 from ..services import db_client
+from .memory_manager import MemoryManager
+from .result_formatter import ResultFormatter
+from .run_event_emitter import RunEventEmitter
+from .run_state import RunStateMachine
 from .tool_executor import ToolExecutor
 
 logger = structlog.get_logger()
@@ -40,13 +44,11 @@ AGENT_SYSTEM_PROMPT = """You are an expert AI agent with access to MCP (Model Co
 - Keep your reasoning transparent — briefly explain why you are choosing each tool."""
 
 
-SUMMARY_THRESHOLD = 20
-RECENT_MESSAGES_TO_KEEP = 8
-
-
 class AgentRuntime:
     def __init__(self, provider_router: ProviderRouter):
         self._router = provider_router
+        self._memory = MemoryManager(provider_router)
+        self._formatter = ResultFormatter()
 
     async def run(
         self,
@@ -60,16 +62,6 @@ class AgentRuntime:
             mode = AgentMode.AGENT
         model = request.model or settings.default_model
 
-        emit(RunEvent(
-            type=EventType.RUN_CREATED,
-            run_id=run_id,
-            data={
-                "conversation_id": request.conversation_id,
-                "model": model,
-                "mode": mode.value,
-            },
-        ))
-
         run_record = await db_client.persist_run(
             run_id=run_id,
             conversation_id=request.conversation_id,
@@ -78,136 +70,83 @@ class AgentRuntime:
         )
         run_db_id = run_record.get("id") if run_record else None
 
-        await db_client.persist_run_event(run_db_id, "run.created", {
-            "conversation_id": request.conversation_id,
-            "model": model,
-            "mode": mode.value,
-        })
+        state = RunStateMachine(run_id, run_db_id)
+        emitter = RunEventEmitter(run_id, run_db_id, emit)
+
+        await emitter.run_created(request.conversation_id, model, mode.value)
 
         try:
-            if mode == AgentMode.TOOL:
-                full_response = await self._run_tool_mode(request, run_id, run_db_id, emit)
-            elif mode == AgentMode.AGENT:
-                full_response = await self._run_agent_mode(request, run_id, run_db_id, model, emit)
-            else:
-                full_response = await self._run_chat_mode(request, run_id, run_db_id, model, emit)
+            await state.transition(RunStatus.RUNNING)
 
-            await db_client.update_run(run_id, status=RunStatus.COMPLETED.value)
-            await db_client.persist_run_event(run_db_id, "run.completed")
-            emit(RunEvent(type=EventType.RUN_COMPLETED, run_id=run_id))
+            if mode == AgentMode.TOOL:
+                full_response = await self._run_tool_mode(request, state, emitter)
+            elif mode == AgentMode.AGENT:
+                full_response = await self._run_agent_mode(request, state, emitter, model)
+            else:
+                full_response = await self._run_chat_mode(request, state, emitter, model)
+
+            await state.transition(RunStatus.COMPLETED)
+            await emitter.run_completed()
             return full_response
 
         except Exception as exc:
             error_msg = str(exc)
             logger.error("agent_run_failed", run_id=run_id, error=error_msg)
-            await db_client.update_run(run_id, status=RunStatus.FAILED.value, error_message=error_msg)
-            await db_client.persist_run_event(run_db_id, "run.failed", {"error": error_msg})
-            emit(RunEvent(type=EventType.RUN_FAILED, run_id=run_id, data={"error": error_msg}))
+            await state.transition(RunStatus.FAILED, error_message=error_msg)
+            await emitter.run_failed(error_msg)
             return ""
-
-    async def _summarize_history(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if len(messages) <= SUMMARY_THRESHOLD:
-            return messages
-
-        older = messages[:-RECENT_MESSAGES_TO_KEEP]
-        recent = messages[-RECENT_MESSAGES_TO_KEEP:]
-
-        transcript_parts = []
-        for m in older:
-            role_label = "User" if m.get("role") == "user" else "Assistant"
-            content = m.get("content", "")
-            if isinstance(content, str):
-                text = content[:500]
-            elif isinstance(content, list):
-                text = " ".join(
-                    b.get("text", "")[:200]
-                    for b in content
-                    if isinstance(b, dict) and b.get("type") == "text"
-                )
-            else:
-                text = str(content)[:500]
-            transcript_parts.append(f"{role_label}: {text}")
-
-        transcript = "\n\n".join(transcript_parts)
-
-        try:
-            summary_provider = self._router.get_provider_for_task("fast")
-            if not summary_provider:
-                return messages
-            provider, summary_model = summary_provider
-            result = await provider.complete(
-                model=summary_model,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Summarize the following conversation history into a concise paragraph "
-                        "(max 300 words) that captures the key topics, decisions, and context "
-                        f"needed to continue the conversation:\n\n{transcript}\n\nSummary:"
-                    ),
-                }],
-                max_tokens=512,
-            )
-            if result.text.strip():
-                return [
-                    {"role": "user", "content": f"[Earlier conversation summary: {result.text.strip()}]"},
-                    {"role": "assistant", "content": "Understood, I'll keep that context in mind."},
-                    *recent,
-                ]
-        except Exception as exc:
-            logger.warning("summarization_failed", error=str(exc))
-
-        return messages
 
     async def _run_chat_mode(
         self,
         request: ChatRequest,
-        run_id: str,
-        run_db_id: Optional[int],
+        state: RunStateMachine,
+        emitter: RunEventEmitter,
         model: str,
-        emit: Callable[[RunEvent], None],
     ) -> str:
-        emit(RunEvent(type=EventType.MODEL_STARTED, run_id=run_id))
-        await db_client.persist_run_event(run_db_id, "model.started")
+        await emitter.model_started()
 
         provider = self._router.get_provider_for_model(model)
         if not provider:
-            raise RuntimeError(f"No provider available for model {model}")
+            task_result = self._router.get_provider_for_task("general")
+            if task_result:
+                provider, model = task_result
+            else:
+                raise RuntimeError(f"No provider available for model {model}")
 
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
-        messages = await self._summarize_history(messages)
+        messages = await self._memory.prepare_messages(messages)
         full_response = ""
 
         async for chunk in provider.stream_completion(model=model, messages=messages, max_tokens=8192):
             if chunk.chunk_type == "text":
                 full_response += chunk.content
-                emit(RunEvent(type=EventType.TEXT_DELTA, run_id=run_id, data={"content": chunk.content}))
+                emitter.text_delta(chunk.content)
             elif chunk.chunk_type == "error":
                 raise RuntimeError(chunk.content)
 
-        await db_client.persist_run_event(run_db_id, "text.completed", {"length": len(full_response)})
         return full_response
 
     async def _run_tool_mode(
         self,
         request: ChatRequest,
-        run_id: str,
-        run_db_id: Optional[int],
-        emit: Callable[[RunEvent], None],
+        state: RunStateMachine,
+        emitter: RunEventEmitter,
     ) -> str:
-        emit(RunEvent(type=EventType.MODEL_STARTED, run_id=run_id))
-        await db_client.persist_run_event(run_db_id, "model.started")
+        await emitter.model_started()
 
         if not request.selected_server_id or not request.selected_tool_name:
             raise RuntimeError("Tool mode requires selected_server_id and selected_tool_name")
 
         tool_executor = ToolExecutor(
-            run_id=run_id,
-            run_db_id=run_db_id,
+            run_id=state.run_id,
+            run_db_id=state.run_db_id,
             conversation_id=request.conversation_id,
             servers=request.servers,
             tools=request.tools,
-            emit=emit,
+            emit=emitter._emit,
         )
+
+        await state.transition(RunStatus.TOOL_CALLING)
 
         tool_id = f"tool_{uuid.uuid4().hex[:8]}"
         namespaced = f"{request.selected_server_id}__{request.selected_tool_name}"
@@ -215,40 +154,43 @@ class AgentRuntime:
 
         result = await tool_executor.execute(tool_id, namespaced, tool_args)
 
-        if result.success:
-            content_str = json.dumps(result.content, default=str) if result.content else ""
-            full_response = (
-                f"Executed **{request.selected_tool_name}** in {result.duration_ms}ms.\n\n"
-                f"**Result:**\n```json\n{content_str[:500]}\n```"
-            )
-        else:
-            full_response = f"Tool **{request.selected_tool_name}** failed: {result.error or 'Unknown error'}"
+        await state.transition(RunStatus.RUNNING)
 
-        emit(RunEvent(type=EventType.TEXT_DELTA, run_id=run_id, data={"content": full_response}))
+        full_response = self._formatter.format_tool_result(
+            tool_name=request.selected_tool_name,
+            success=result.success,
+            content=result.content,
+            error=result.error,
+            duration_ms=result.duration_ms,
+        )
+
+        emitter.text_delta(full_response)
         return full_response
 
     async def _run_agent_mode(
         self,
         request: ChatRequest,
-        run_id: str,
-        run_db_id: Optional[int],
+        state: RunStateMachine,
+        emitter: RunEventEmitter,
         model: str,
-        emit: Callable[[RunEvent], None],
     ) -> str:
-        emit(RunEvent(type=EventType.MODEL_STARTED, run_id=run_id))
-        await db_client.persist_run_event(run_db_id, "model.started")
+        await emitter.model_started()
 
         provider = self._router.get_provider_for_model(model)
         if not provider:
-            raise RuntimeError(f"No provider available for model {model}")
+            task_result = self._router.get_provider_for_task("tool_optimized")
+            if task_result:
+                provider, model = task_result
+            else:
+                raise RuntimeError(f"No provider available for model {model}")
 
         tool_executor = ToolExecutor(
-            run_id=run_id,
-            run_db_id=run_db_id,
+            run_id=state.run_id,
+            run_db_id=state.run_db_id,
             conversation_id=request.conversation_id,
             servers=request.servers,
             tools=request.tools,
-            emit=emit,
+            emit=emitter._emit,
         )
 
         provider_tools = [
@@ -257,35 +199,33 @@ class AgentRuntime:
         ]
 
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
-        messages = await self._summarize_history(messages)
+        messages = await self._memory.prepare_messages(messages)
 
         system_prompt = request.system_prompt or AGENT_SYSTEM_PROMPT
 
-        emit(RunEvent(type=EventType.THINKING_STARTED, run_id=run_id, data={"message": "Planning..."}))
+        emitter.thinking_started("Planning...")
 
         if request.servers:
             server_names = [s.name for s in request.servers]
-            emit(RunEvent(type=EventType.THINKING_DELTA, run_id=run_id, data={"content": f"Connected servers: {', '.join(server_names)}"}))
+            emitter.thinking_delta(f"Connected servers: {', '.join(server_names)}")
         else:
-            emit(RunEvent(type=EventType.THINKING_DELTA, run_id=run_id, data={"content": "No MCP servers connected — will respond from knowledge only"}))
+            emitter.thinking_delta("No MCP servers connected — will respond from knowledge only")
 
         if provider_tools:
             tool_names = [t["name"].split("__")[-1] for t in provider_tools[:8]]
             extra = f" +{len(provider_tools) - 8} more" if len(provider_tools) > 8 else ""
-            emit(RunEvent(type=EventType.THINKING_DELTA, run_id=run_id, data={"content": f"Available tools: {', '.join(tool_names)}{extra}"}))
+            emitter.thinking_delta(f"Available tools: {', '.join(tool_names)}{extra}")
 
         loop_messages = list(messages)
         full_response = ""
-        total_tokens_in = 0
-        total_tokens_out = 0
         max_loops = settings.max_agent_loops
 
         for loop_count in range(1, max_loops + 1):
             if loop_count > 1:
-                emit(RunEvent(type=EventType.THINKING_DELTA, run_id=run_id, data={"content": f"Iteration {loop_count}: reviewing tool results and deciding next step..."}))
+                emitter.thinking_delta(f"Iteration {loop_count}: reviewing tool results and deciding next step...")
 
             current_text = ""
-            tool_use_blocks = []
+            tool_use_blocks: List[Dict[str, Any]] = []
             stop_reason = None
             thinking_completed = False
 
@@ -298,11 +238,11 @@ class AgentRuntime:
             ):
                 if chunk.chunk_type == "text":
                     if not thinking_completed:
-                        emit(RunEvent(type=EventType.THINKING_COMPLETED, run_id=run_id))
+                        emitter.thinking_completed()
                         thinking_completed = True
                     current_text += chunk.content
                     full_response += chunk.content
-                    emit(RunEvent(type=EventType.TEXT_DELTA, run_id=run_id, data={"content": chunk.content}))
+                    emitter.text_delta(chunk.content)
 
                 elif chunk.chunk_type == "tool_start":
                     tool_use_blocks.append({
@@ -322,7 +262,10 @@ class AgentRuntime:
                 elif chunk.chunk_type == "usage":
                     try:
                         usage_data = json.loads(chunk.content)
-                        total_tokens_in += usage_data.get("input_tokens", 0)
+                        state.add_tokens(
+                            tokens_in=usage_data.get("input_tokens", 0),
+                            tokens_out=usage_data.get("output_tokens", usage_data.get("completion_tokens", 0)),
+                        )
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -330,7 +273,7 @@ class AgentRuntime:
                     raise RuntimeError(chunk.content)
 
             if not thinking_completed:
-                emit(RunEvent(type=EventType.THINKING_COMPLETED, run_id=run_id))
+                emitter.thinking_completed()
 
             for block in tool_use_blocks:
                 if block["_raw_input"]:
@@ -345,17 +288,20 @@ class AgentRuntime:
             if not tool_use_blocks or stop_reason == "end_turn":
                 break
 
+            await state.transition(RunStatus.TOOL_CALLING)
+
             tool_results = []
             for block in tool_use_blocks:
-                emit(RunEvent(type=EventType.THINKING_DELTA, run_id=run_id, data={"content": f"Selecting tool: {block['name'].split('__')[-1] if '__' in block['name'] else block['name']}"}))
+                raw_name = block["name"].split("__")[-1] if "__" in block["name"] else block["name"]
+                emitter.thinking_delta(f"Selecting tool: {raw_name}")
 
                 result = await tool_executor.execute(block["id"], block["name"], block["input"])
 
-                result_text = ""
-                if result.success:
-                    result_text = json.dumps(result.content, default=str) if result.content else ""
-                else:
-                    result_text = f"Error: {result.error or 'Unknown error'}"
+                result_text = self._formatter.format_tool_content_for_model(
+                    success=result.success,
+                    content=result.content,
+                    error=result.error,
+                )
 
                 tool_results.append({
                     "type": "tool_result",
@@ -376,11 +322,6 @@ class AgentRuntime:
                     "content": tool_results,
                 })
 
-        await db_client.update_run(
-            run_id,
-            status=RunStatus.COMPLETED.value,
-            tokens_in=total_tokens_in if total_tokens_in else None,
-            tokens_out=total_tokens_out if total_tokens_out else None,
-        )
+            await state.transition(RunStatus.RUNNING)
 
         return full_response
