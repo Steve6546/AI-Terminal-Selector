@@ -1,0 +1,484 @@
+أريد إعادة تنظيم المشروع وتحسينه بشكل احترافي بناءً على المعمارية الحالية الموجودة في الكود.
+بعد مراجعة المشروع، واضح أن النظام الحالي قوي كبداية، لكن يحتاج إعادة ترتيب حتى يصبح أنظف، أسرع، وأسهل للتوسع.
+
+القرار المعماري الجديد
+التحديث 1: تحويل الواجهة من React + Vite إلى Next.js
+
+المشروع الحالي مبني على React + Vite + Wouter، لكن أريد تحويل الواجهة إلى Next.js App Router.
+
+الهدف من هذا التحويل:
+
+تنظيم أفضل للصفحات والـ layouts
+بنية أوضح للويب
+تحسين rendering
+تحسين تنظيم الـ routes
+تجهيز المشروع ليكون أقرب لمنتج حقيقي
+تسهيل SSR / streaming UI مستقبلًا
+تحسين فصل الواجهة عن منطق الوكيل
+
+المهم:
+Next.js يكون مسؤول عن:
+
+واجهة الشات
+صفحات الإعدادات
+صفحات MCP
+الـ layout
+طبقة الويب
+route handlers / BFF عند الحاجة
+التحديث 2: جعل Python هو القلب الحقيقي للوكيل
+
+المشروع الحالي فيه Python، لكن دوره الآن محدود جدًا في ملف agent-backend/main.py كبوابة MCP فقط.
+أريد توسيع Python بحيث يصبح هو المسؤول عن:
+
+agent orchestration
+planning
+tool routing
+retries
+workflow execution
+memory/state logic
+provider abstraction
+background jobs
+MCP execution engine
+evaluation and tracing
+
+يعني:
+
+Next.js = واجهة
+Python = عقل المشروع
+التحديث 3: إزالة اعتماد المشروع المعماري على اسم Anthropic
+
+بعد مراجعة الكود، واضح أن عندي أجزاء كثيرة ما زالت مربوطة باسم Anthropic مثل:
+
+routes
+hooks
+api names
+conversations
+generated types
+
+أريد تعميم هذه الطبقة حتى لا يبقى المشروع مقيدًا بمزود واحد.
+
+أريد استبدال التسمية الحالية إلى بنية عامة مثل:
+
+providers
+models
+chat engines
+llm adapters
+agent runs
+conversations
+messages
+
+حتى يصير المشروع يدعم بسهولة:
+
+Anthropic
+OpenAI
+Gemini
+Local models
+التحديث 4: نقل منطق الوكيل من route واحد كبير إلى Agent Core واضح
+
+في المشروع الحالي، route الشات الرئيسي كبير جدًا ويحمل منطقًا كثيرًا جدًا:
+
+streaming
+tool selection
+execution
+approvals
+anthropic loop
+conversation persistence
+
+أريد نقل هذا المنطق من route كبير إلى Python Agent Core منظّم.
+البنية المطلوبة في Python تكون مثل هذا:
+
+planner
+runtime
+tool executor
+approval manager
+memory manager
+provider router
+run event emitter
+result formatter
+التحديث 5: بناء Agent Workflow واضح في Python
+
+أريد الوكيل في Python يعمل بطريقة مرتبة وواضحة، وليس logic متداخل.
+
+التدفق المطلوب:
+
+فهم الطلب
+تحديد الوضع: chat / agent / tool
+بناء plan
+اختيار provider/model
+اختيار الأدوات
+تنفيذ الأدوات
+جمع النتائج
+صياغة الرد النهائي
+حفظ trace كامل
+
+أريد هذه البنية تكون قابلة للتطوير لاحقًا.
+
+التحديث 6: تحسين ملفات كبيرة جدًا في الواجهة والباكند
+
+بعد مراجعة الكود، يوجد ملفات كبيرة جدًا وتحتاج تفكيك، مثل:
+
+صفحة الإعدادات
+صفحة تفاصيل MCP server
+chat page
+route المحادثات
+route MCP servers
+
+أريد تقسيم هذه الملفات إلى وحدات أصغر حسب المسؤولية.
+
+في الواجهة:
+
+بدل ملف واحد كبير، أريد تقسيم:
+
+chat container
+message timeline
+live tool rail
+approval manager
+terminal dock
+composer
+stream state controller
+في الباكند:
+
+بدل route يحمل كل شيء:
+
+conversation service
+run service
+execution service
+approval service
+provider service
+mcp discovery service
+التحديث 7: تحسين سلاسة الشات بشكل كبير
+
+المشروع الحالي فيه واجهة جميلة، لكن واضح أن الشات معرض للثقل بسبب:
+
+re-renders كثيرة
+animations كثيرة
+streaming state داخل نفس الصفحة
+markdown rendering مباشر
+lists طويلة بدون virtualization
+
+أريد تحسينات واضحة هنا:
+
+message virtualization
+memoization للرسائل
+throttled streaming updates
+scroll stabilization
+deferred markdown rendering
+تقليل animation الثقيلة
+فصل streamed text عن message list
+
+هذا من أهم التحديثات لأن سلاسة الشات جزء أساسي من المشروع.
+
+التحديث 8: تحسين الـ Terminal architecture
+
+الـ terminal الحالي فكرة ممتازة، لكنه يحتاج تنظيم وأمان أقوى.
+حاليًا يعتمد على ws + node-pty ويشغل shell مباشر.
+
+أريد تحسينه بهذه الطريقة:
+
+per-session isolation
+session lifecycle واضح
+timeout
+audit trail
+command policy
+sandbox mode
+resource limits
+optional disable mode
+فصل output / errors / shell stream بشكل أفضل
+
+وبما أن المشروع حاليًا شخصي، يمكن إبقاء terminal قوي، لكن بشكل أكثر انضباطًا.
+
+التحديث 9: إصلاح مشكلة CORS / origins في الواجهة والـ terminal
+
+بعد مراجعة الكود، يوجد نقطة واضحة تحتاج تحسين:
+الـ allowed origins مبنية بشكل strict على http://localhost و http://127.0.0.1 بدون معالجة جيدة لحالات dev ports.
+أريد تعديل هذه الطبقة حتى تدعم التطوير المحلي بشكل صحيح، خصوصًا:
+
+localhost with ports
+replit dev domains
+production origins
+websocket origin validation
+التحديث 10: تحسين MCP health check
+
+الـ health check الحالي مفيد، لكنه ما يزال سطحيًا نسبيًا.
+أريد استبداله بفحص حقيقي يشمل:
+
+actual MCP handshake
+list tools
+list resources
+list prompts
+auth validation
+latency
+timeout
+status details
+
+حتى لا يظهر السيرفر connected وهو فعليًا غير جاهز.
+
+التحديث 11: حفظ حالات السيرفر بشكل كامل
+
+أريد جميع حالات الـ MCP server تُحفظ وتنعكس في قاعدة البيانات بالكامل، وليس فقط connected/error.
+
+الحالات المطلوبة:
+
+checking
+connected
+degraded
+auth_required
+disconnected
+error
+
+وأريد الواجهة والـ database والـ live SSE يكونون متطابقين.
+
+التحديث 12: نقل attachments من تخزين بسيط إلى pipeline حقيقي
+
+بعد مراجعة الكود، attachments الآن بسيطة جدًا، ويظهر أنها تُرفع كنص/base64 وتُخزن بشكل محدود.
+هذا سيصبح مشكلة مع الوقت.
+
+أريد تحسينها إلى:
+
+storage layer واضح
+file metadata
+checksum
+upload state
+extracted text
+parser status
+relation to message/conversation
+searchable content
+
+ولا أريد استمرار تضخم قاعدة البيانات بسبب حفظ الملفات بهذه الطريقة البسيطة.
+
+التحديث 13: إعادة تصميم قاعدة البيانات
+
+قاعدة البيانات الحالية بداية جيدة، لكنها تحتاج توسيع لتناسب مشروع وكيل حقيقي.
+
+أريد إضافة طبقات أوضح مثل:
+
+users
+workspaces
+projects
+conversations
+message parts
+attachments
+tool calls
+approval decisions
+audit events
+terminal sessions
+run traces
+provider settings
+model routing settings
+secure credentials vault
+التحديث 14: تحويل settings من text إلى jsonb / structured config
+
+حاليًا settings تعتمد على valueJson كنص، وهذا يسبب ضعف في:
+
+validation
+querying
+filtering
+config evolution
+
+أريد:
+
+إما jsonb
+أو typed config tables
+مع validation واضحة لكل نوع إعداد
+التحديث 15: بناء Approval System حقيقي
+
+في المشروع الحالي يوجد approval logic داخل runtime، لكنه ما يزال transient أكثر من اللازم.
+أريد approval system أوضح:
+
+pending approvals table
+explicit decision records
+actor identity
+timestamp
+approve / reject reason
+timeout policy
+UI واضحة للموافقة
+التحديث 16: دمج الـ live status streams بشكل أنظف
+
+لاحظت أن المشروع يستخدم EventSource في أكثر من مكان:
+
+sidebar
+topbar
+health hook
+
+أريد توحيد هذه الطبقة في stream manager مشترك، حتى لا تتكرر المنطقية وتصبح إدارة التحديثات أفضل.
+
+التحديث 17: جعل Python يدعم Background Jobs حقيقية
+
+أريد Python لا يكون فقط API لحظي، بل أيضًا يدير jobs مثل:
+
+long-running tool chains
+async evaluation
+discovery refresh
+indexing
+embeddings
+file parsing
+audit processing
+المكتبات المقترحة:
+FastAPI
+Pydantic
+httpx
+asyncio / anyio
+Redis
+Dramatiq أو Celery أو ARQ
+tenacity
+orjson
+structlog
+pydantic-settings
+التحديث 18: بناء Provider Router في Python
+
+أريد agent core في Python يقرر أي model يستخدم حسب المهمة.
+
+أمثلة:
+
+fast model
+reasoning model
+tool-optimized model
+cheap fallback model
+local model fallback
+
+هذا مهم جدًا لأن المشروع ليس شات عادي، بل وكيل متعدد الأوضاع.
+
+التحديث 19: تحسين Tool Execution architecture
+
+أريد طبقة التنفيذ تكون أوضح من الحالية، بحيث كل tool run يمر عبر:
+
+validation
+permission check
+approval check
+runtime allowlist check
+timeout
+execution
+result normalization
+artifact creation
+audit logging
+التحديث 20: تحسين بنية الرسائل Message Model
+
+حاليًا الرسائل تعتمد أساسًا على content نص واحد، وهذا محدود.
+أريد بنية مرنة للرسائل مثل:
+
+text parts
+tool call parts
+tool result parts
+thinking parts
+attachment refs
+artifact refs
+system annotations
+
+حتى يصير المشروع قابل للتوسع لاحقًا.
+
+التحديث 21: تحسين observability والتتبع
+
+أريد إضافة observability حقيقية للمشروع:
+
+structured logs
+trace id
+run id
+execution id propagation
+per-tool metrics
+latency tracking
+failure analytics
+debug mode واضح
+التحديث 22: تحسين UX الخاص بـ MCP
+
+واجهة MCP الحالية جيدة، لكن أريدها تصبح أقوى:
+
+test connection
+discover capabilities
+tool categories
+permissions summary
+risk badge
+last success / failure
+auth badge
+latency badge
+refresh controls
+cleaner detail view
+التحديث 23: تحسين تجربة الجوال
+
+المشروع الآن desktop-first بشكل واضح.
+أريد تحسين mobile UX عبر:
+
+collapsible sidebar
+terminal drawer
+bottom sheet panels
+compact message cards
+reduced animations
+better responsive spacing
+التحديث 24: فصل التفكير عن النتيجة والأدوات
+
+في واجهة الشات أريد فصل واضح بين:
+
+final answer
+thinking trace
+tool activity
+logs
+terminal output
+
+بدل تداخلهم الحالي.
+
+التحديث 25: جعل Python هو مكان الذكاء الحقيقي وليس مجرد gateway
+
+هذا أهم تحديث عندي.
+
+أريد Python يتطور من:
+
+MCP gateway فقط
+
+إلى:
+
+full agent runtime
+orchestration engine
+planning layer
+memory layer
+evaluation layer
+background processing layer
+مكتبات Python المقترحة لتطوير الوكيل
+الأساس
+FastAPI
+Pydantic
+pydantic-settings
+httpx
+uvicorn
+websockets
+orjson
+tenacity
+structlog
+قاعدة البيانات والتنفيذ
+SQLAlchemy أو SQLModel
+asyncpg
+Alembic
+Redis
+Dramatiq أو ARQ أو Celery
+للوكيل
+LangGraph إذا احتجنا graph orchestration
+MCP Python SDK
+jsonschema
+networkx عند الحاجة
+typing-rich domain models
+للذاكرة والبحث مستقبلًا
+pgvector
+sentence-transformers
+FAISS أو Qdrant
+ملاحظات مهمة من مراجعة الكود
+المشروع الحالي ليس Next.js، بل React + Vite.
+المشروع الحالي يعتمد بشكل كبير على TypeScript أكثر بكثير من Python.
+Python الحالي ليس بعد Agent Core كامل، بل gateway محدود.
+المشروع فيه ملفات كبيرة جدًا تحتاج تفكيك.
+الـ naming الحالي ما زال مربوطًا بـ Anthropic أكثر من اللازم.
+الـ Terminal قوي لكنه يحتاج أمان وتنظيم أعلى.
+الـ attachments تحتاج تصميم جديد.
+إعدادات المشروع تحتاج structured config أفضل.
+الـ health checks تحتاج أن تكون حقيقية وليست سطحية.
+المشروع عنده أساس ممتاز، لكن الآن يحتاج مرحلة Product Architecture حقيقية.
+الخلاصة التنفيذية النهائية
+
+أريد التحديث المعماري النهائي للمشروع يكون:
+
+Next.js للواجهة ومنصة الويب
+Python/FastAPI لقلب الوكيل والمنطق الذكي
+PostgreSQL للبيانات
+Redis للـ queue / streaming / cache
+Typed schemas مشتركة بين الطبقات
+Agent runtime واضح في Python
+واجهة شات أسرع وأنظف
+MCP management أقوى
+Tool execution أكثر أمانًا وتنظيمًا
