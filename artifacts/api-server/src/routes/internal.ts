@@ -70,7 +70,7 @@ router.patch("/internal/tool-calls/:id", async (req, res) => {
         entityType: "tool_call",
         entityId: tcId,
         traceId: req.traceId,
-        metadata: { toolName, durationMs: data.durationMs, runId: data.runId },
+        details: { toolName, durationMs: data.durationMs, runId: data.runId },
       });
     }
     res.json({ ok: true });
@@ -98,7 +98,7 @@ router.post("/internal/executions", async (req, res) => {
       entityType: "execution",
       entityId: result.id,
       traceId: req.traceId,
-      metadata: { toolName: req.body.toolName, conversationId: req.body.conversationId },
+      details: { toolName: req.body.toolName, conversationId: req.body.conversationId },
     });
     res.status(201).json(result);
   } catch (err) {
