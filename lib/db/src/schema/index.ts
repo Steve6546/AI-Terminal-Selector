@@ -3,3 +3,8 @@ export * from "./messages";
 export * from "./mcp-servers";
 export * from "./executions";
 export * from "./settings";
+export * from "./runs";
+export * from "./tool-calls";
+export * from "./approvals";
+export * from "./audit-events";
+export * from "./providers";

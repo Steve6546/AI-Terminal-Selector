@@ -6,11 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AnthropicMessage {
+export interface DuplicateConversationResult {
   id: number;
-  conversationId: number;
-  role: string;
-  content: string;
-  model?: string;
+  title: string;
+  model: string;
+  pinnedAt?: Date | null;
   createdAt: Date;
+  updatedAt: Date;
+  messageCount: number;
 }

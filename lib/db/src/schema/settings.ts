@@ -1,11 +1,12 @@
-import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
   key: text("key").notNull().unique(),
-  valueJson: text("value_json").notNull(),
+  valueJson: jsonb("value_json").notNull(),
+  category: text("category").notNull().default("general"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -16,6 +17,11 @@ export const attachments = pgTable("attachments", {
   fileName: text("file_name").notNull(),
   fileType: text("file_type").notNull(),
   content: text("content"),
+  sizeBytes: integer("size_bytes"),
+  checksum: text("checksum"),
+  uploadState: text("upload_state").notNull().default("complete"),
+  extractedText: text("extracted_text"),
+  parserStatus: text("parser_status").notNull().default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

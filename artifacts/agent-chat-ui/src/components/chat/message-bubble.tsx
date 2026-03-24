@@ -9,7 +9,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { format } from "date-fns";
 import { User, Sparkles, Copy, Check, RotateCcw, Edit2, Send, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AnthropicMessage } from "@workspace/api-client-react";
+import type { ChatMessage } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import TextareaAutosize from "react-textarea-autosize";
 import {
@@ -21,7 +21,7 @@ import {
 import { AVAILABLE_MODELS } from "@/hooks/use-local-settings";
 
 interface MessageBubbleProps {
-  message: AnthropicMessage;
+  message: ChatMessage;
   currentModel?: string;
   onRetry?: (messageId: number, model: string) => void;
   onEditResend?: (messageId: number, newContent: string) => void;

@@ -61,23 +61,30 @@ scripts/                # Utility scripts
 ## DB Schema
 
 - `conversations` — AI conversations (id, title, model, timestamps)
-- `messages` — Chat messages (role, content, model, conversationId)
+- `messages` — Chat messages (role, content, model, conversationId, contentBlocks jsonb)
 - `mcp_servers` — MCP server configs (transport, auth, status)
 - `mcp_tools` — Discovered tools per server
 - `mcp_resources` — Resources per server
 - `mcp_prompts` — Prompt templates per server
 - `executions` — Tool execution records with timeline
 - `execution_logs` — Per-execution log entries
-- `settings` — Key/value app settings (includes domainAllowlist, compactMode, developerMode, etc.)
+- `settings` — Key/value app settings (value_json is jsonb)
 - `attachments` — File attachments for conversations
 - `database_connections` — External DB connections (PostgreSQL/MySQL/SQLite, encrypted passwords)
+- `runs` — Agent run sessions (id uuid, conversationId, model, status, tokenUsage)
+- `run_events` — Events within a run (thinking, text, tool_call, etc.)
+- `tool_calls` — Individual tool call records (runId, serverId, toolName, args, result)
+- `approval_decisions` — User approval/rejection of tool calls
+- `audit_events` — System-wide audit log
+- `provider_settings` — AI provider configuration (apiKey encrypted, models, routing)
+- `model_routing` — Model routing rules (provider, model, priority)
 
 ## API Routes (mounted at /api)
 
-- `GET/POST /api/anthropic/conversations` — list/create chats
-- `GET/PATCH/DELETE /api/anthropic/conversations/:id` — get/update/delete
-- `GET/POST /api/anthropic/conversations/:id/messages` — messages + SSE stream
-- `DELETE /api/anthropic/conversations/:id/messages-from/:messageId` — truncate messages from a point (for Edit/Retry)
+- `GET/POST /api/conversations` — list/create chats
+- `GET/PATCH/DELETE /api/conversations/:id` — get/update/delete
+- `GET/POST /api/conversations/:id/messages` — messages + SSE stream
+- `DELETE /api/conversations/:id/messages-from/:messageId` — truncate messages from a point (for Edit/Retry)
 - `GET/POST/PATCH/DELETE /api/mcp-servers` — CRUD MCP servers
 - `POST /api/mcp-servers/:id/test` — test connection
 - `POST /api/mcp-servers/:id/discover` — discover tools
@@ -94,7 +101,7 @@ scripts/                # Utility scripts
 
 ## Streaming (SSE)
 
-Chat messages stream via SSE at `POST /api/anthropic/conversations/:id/messages`.
+Chat messages stream via SSE at `POST /api/conversations/:id/messages`.
 Format: `data: {"content":"..."}` chunks, then `data: {"done":true}`.
 The frontend hook `useChatStream` consumes this with `ReadableStream`.
 
@@ -114,13 +121,12 @@ Every package extends `tsconfig.base.json`. Build order:
 
 After OpenAPI spec changes:
 ```bash
-pnpm --filter @workspace/api-spec run codegen
+cd lib/api-spec && npx orval
 ```
 
 After DB schema changes:
 ```bash
-pnpm --filter @workspace/db run push
-pnpm --filter @workspace/db exec tsc -p tsconfig.json
+cd lib/db && npx drizzle-kit push
 ```
 
 ## Running

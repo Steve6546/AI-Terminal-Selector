@@ -9,8 +9,6 @@ servers:
 tags:
   - name: health
     description: Health operations
-  - name: anthropic
-    description: Anthropic AI chat operations
   - name: conversations
     description: Conversation management
   - name: mcpServers
@@ -36,10 +34,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
-  /anthropic/conversations:
+  /conversations:
     get:
-      operationId: listAnthropicConversations
-      tags: [anthropic]
+      operationId: listConversations
+      tags: [conversations]
       summary: List all conversations
       responses:
         "200":
@@ -49,29 +47,29 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/AnthropicConversation"
+                  $ref: "#/components/schemas/Conversation"
     post:
-      operationId: createAnthropicConversation
-      tags: [anthropic]
+      operationId: createConversation
+      tags: [conversations]
       summary: Create a new conversation
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateAnthropicConversationBody"
+              $ref: "#/components/schemas/CreateConversationBody"
       responses:
         "201":
           description: Created conversation
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicConversation"
+                $ref: "#/components/schemas/Conversation"
 
-  /anthropic/conversations/{id}:
+  /conversations/{id}:
     get:
-      operationId: getAnthropicConversation
-      tags: [anthropic]
+      operationId: getConversation
+      tags: [conversations]
       summary: Get conversation with messages
       parameters:
         - name: id
@@ -85,16 +83,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicConversationWithMessages"
+                $ref: "#/components/schemas/ConversationWithMessages"
         "404":
           description: Not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicError"
+                $ref: "#/components/schemas/ApiError"
     delete:
-      operationId: deleteAnthropicConversation
-      tags: [anthropic]
+      operationId: deleteConversation
+      tags: [conversations]
       summary: Delete a conversation
       parameters:
         - name: id
@@ -110,10 +108,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicError"
+                $ref: "#/components/schemas/ApiError"
     patch:
-      operationId: updateAnthropicConversation
-      tags: [anthropic]
+      operationId: updateConversation
+      tags: [conversations]
       summary: Update a conversation (rename)
       parameters:
         - name: id
@@ -126,25 +124,25 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateAnthropicConversationBody"
+              $ref: "#/components/schemas/UpdateConversationBody"
       responses:
         "200":
           description: Updated conversation
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicConversation"
+                $ref: "#/components/schemas/Conversation"
         "404":
           description: Not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicError"
+                $ref: "#/components/schemas/ApiError"
 
-  /anthropic/conversations/{id}/auto-name:
+  /conversations/{id}/auto-name:
     post:
-      operationId: autoNameAnthropicConversation
-      tags: [anthropic]
+      operationId: autoNameConversation
+      tags: [conversations]
       summary: Auto-name a conversation using AI
       parameters:
         - name: id
@@ -169,10 +167,10 @@ paths:
         "404":
           description: Not found
 
-  /anthropic/conversations/{id}/pin:
+  /conversations/{id}/pin:
     post:
-      operationId: pinAnthropicConversation
-      tags: [anthropic]
+      operationId: pinConversation
+      tags: [conversations]
       summary: Pin a conversation
       parameters:
         - name: id
@@ -188,10 +186,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/PinConversationResult"
 
-  /anthropic/conversations/{id}/unpin:
+  /conversations/{id}/unpin:
     post:
-      operationId: unpinAnthropicConversation
-      tags: [anthropic]
+      operationId: unpinConversation
+      tags: [conversations]
       summary: Unpin a conversation
       parameters:
         - name: id
@@ -207,10 +205,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/PinConversationResult"
 
-  /anthropic/conversations/{id}/duplicate:
+  /conversations/{id}/duplicate:
     post:
-      operationId: duplicateAnthropicConversation
-      tags: [anthropic]
+      operationId: duplicateConversation
+      tags: [conversations]
       summary: Duplicate a conversation
       parameters:
         - name: id
@@ -226,10 +224,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/DuplicateConversationResult"
 
-  /anthropic/conversations/{id}/export:
+  /conversations/{id}/export:
     get:
-      operationId: exportAnthropicConversation
-      tags: [anthropic]
+      operationId: exportConversation
+      tags: [conversations]
       summary: Export a conversation as JSON or Markdown
       parameters:
         - name: id
@@ -246,10 +244,10 @@ paths:
         "200":
           description: Exported conversation file
 
-  /anthropic/conversations/{id}/messages:
+  /conversations/{id}/messages:
     get:
-      operationId: listAnthropicMessages
-      tags: [anthropic]
+      operationId: listMessages
+      tags: [conversations]
       summary: List messages in a conversation
       parameters:
         - name: id
@@ -265,10 +263,10 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/AnthropicMessage"
+                  $ref: "#/components/schemas/ChatMessage"
     post:
-      operationId: sendAnthropicMessage
-      tags: [anthropic]
+      operationId: sendMessage
+      tags: [conversations]
       summary: Send a message and receive an AI response (SSE stream)
       parameters:
         - name: id
@@ -281,17 +279,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SendAnthropicMessageBody"
+              $ref: "#/components/schemas/SendMessageBody"
       responses:
         "200":
           description: SSE stream of assistant response chunks
           content:
             text/event-stream: {}
 
-  /anthropic/conversations/{id}/messages-from/{messageId}:
+  /conversations/{id}/messages-from/{messageId}:
     delete:
-      operationId: truncateAnthropicMessagesFrom
-      tags: [anthropic]
+      operationId: truncateMessagesFrom
+      tags: [conversations]
       summary: Delete all messages from a given message ID onward (inclusive)
       parameters:
         - name: id
@@ -312,7 +310,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnthropicError"
+                $ref: "#/components/schemas/ApiError"
 
   /mcp-servers:
     get:
@@ -854,7 +852,7 @@ components:
       required:
         - status
 
-    AnthropicConversation:
+    Conversation:
       type: object
       properties:
         id:
@@ -932,7 +930,7 @@ components:
         - updatedAt
         - messageCount
 
-    AnthropicMessage:
+    ChatMessage:
       type: object
       properties:
         id:
@@ -955,39 +953,36 @@ components:
         - content
         - createdAt
 
-    CreateAnthropicConversationBody:
+    CreateConversationBody:
       type: object
       properties:
         title:
           type: string
         model:
           type: string
-          enum: [claude-sonnet-4-6, claude-opus-4-6]
           default: claude-sonnet-4-6
       required:
         - title
 
-    UpdateAnthropicConversationBody:
+    UpdateConversationBody:
       type: object
       properties:
         title:
           type: string
         model:
           type: string
-          enum: [claude-sonnet-4-6, claude-opus-4-6]
 
-    SendAnthropicMessageBody:
+    SendMessageBody:
       type: object
       properties:
         content:
           type: string
         model:
           type: string
-          enum: [claude-sonnet-4-6, claude-opus-4-6]
       required:
         - content
 
-    AnthropicConversationWithMessages:
+    ConversationWithMessages:
       type: object
       properties:
         id:
@@ -1005,7 +1000,7 @@ components:
         messages:
           type: array
           items:
-            $ref: "#/components/schemas/AnthropicMessage"
+            $ref: "#/components/schemas/ChatMessage"
       required:
         - id
         - title
@@ -1014,7 +1009,7 @@ components:
         - updatedAt
         - messages
 
-    AnthropicError:
+    ApiError:
       type: object
       properties:
         error:
@@ -1263,6 +1258,11 @@ components:
           type: integer
         resultSummary:
           type: string
+        arguments:
+          type: object
+          additionalProperties: true
+        rawResult:
+          type: string
       required:
         - id
         - toolName
@@ -1276,7 +1276,6 @@ components:
           type: string
         defaultModel:
           type: string
-          enum: [claude-sonnet-4-6, claude-opus-4-6]
         systemPrompt:
           type: string
         autoRun:
@@ -1385,6 +1384,9 @@ components:
         executionStatus:
           type: string
           nullable: true
+        serverId:
+          type: integer
+          nullable: true
         serverName:
           type: string
           nullable: true
@@ -1392,7 +1394,6 @@ components:
         - id
         - executionId
         - level
-        - eventType
         - message
         - createdAt
 
@@ -1405,48 +1406,34 @@ components:
           type: string
         type:
           type: string
-          enum: [postgresql, mysql, sqlite]
+          enum: [postgresql, mysql]
         host:
           type: string
-          nullable: true
         port:
           type: integer
-          nullable: true
         username:
           type: string
-          nullable: true
         database:
           type: string
-          nullable: true
-        filePath:
-          type: string
-          nullable: true
         ssl:
           type: boolean
         status:
           type: string
-          enum: [untested, connected, failed]
+          enum: [connected, disconnected, error]
         lastTestedAt:
           type: string
           format: date-time
           nullable: true
-        lastError:
-          type: string
-          nullable: true
         createdAt:
-          type: string
-          format: date-time
-        updatedAt:
           type: string
           format: date-time
       required:
         - id
         - name
         - type
-        - ssl
+        - database
         - status
         - createdAt
-        - updatedAt
 
     CreateDatabaseConnectionBody:
       type: object
@@ -1455,7 +1442,7 @@ components:
           type: string
         type:
           type: string
-          enum: [postgresql, mysql, sqlite]
+          enum: [postgresql, mysql]
         host:
           type: string
         port:
@@ -1466,19 +1453,22 @@ components:
           type: string
         database:
           type: string
-        filePath:
-          type: string
         ssl:
           type: boolean
+          default: false
       required:
         - name
         - type
+        - database
 
     UpdateDatabaseConnectionBody:
       type: object
       properties:
         name:
           type: string
+        type:
+          type: string
+          enum: [postgresql, mysql]
         host:
           type: string
         port:
@@ -1488,8 +1478,6 @@ components:
         password:
           type: string
         database:
-          type: string
-        filePath:
           type: string
         ssl:
           type: boolean

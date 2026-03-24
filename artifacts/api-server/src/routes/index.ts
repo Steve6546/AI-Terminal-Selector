@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
-import anthropicRouter from "./anthropic/conversations";
+import conversationsRouter from "./conversations";
 import mcpRouter from "./mcp/servers";
 import toolExecuteRouter from "./mcp/tool-execute";
 import systemRouter from "./system/status";
@@ -15,7 +15,7 @@ import mcpAgentRouter from "./mcp-agent/chat";
 const router: IRouter = Router();
 
 router.use(healthRouter);
-router.use("/anthropic", anthropicRouter);
+router.use(conversationsRouter);
 router.use(mcpRouter);
 router.use(toolExecuteRouter);
 router.use("/system", systemRouter);

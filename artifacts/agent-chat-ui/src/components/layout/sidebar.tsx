@@ -8,15 +8,15 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  useListAnthropicConversations, 
-  useCreateAnthropicConversation,
-  useDeleteAnthropicConversation,
-  useUpdateAnthropicConversation,
-  usePinAnthropicConversation,
-  useUnpinAnthropicConversation,
-  useDuplicateAnthropicConversation,
-  useAutoNameAnthropicConversation,
-  getExportAnthropicConversationUrl,
+  useListConversations, 
+  useCreateConversation,
+  useDeleteConversation,
+  useUpdateConversation,
+  usePinConversation,
+  useUnpinConversation,
+  useDuplicateConversation,
+  useAutoNameConversation,
+  getExportConversationUrl,
   useListMcpServers,
 } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
+import { getListConversationsQueryKey } from "@workspace/api-client-react";
 
 const DEFAULT_TITLE_PATTERNS = ["New Chat", "New Conversation"];
 
@@ -80,15 +80,15 @@ export function Sidebar() {
   const editInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   
-  const { data: conversations, isLoading } = useListAnthropicConversations();
+  const { data: conversations, isLoading } = useListConversations();
   const { data: mcpServers } = useListMcpServers({ query: { refetchInterval: 60_000, queryKey: ["mcp-servers-sidebar"] } });
-  const createMutation = useCreateAnthropicConversation();
-  const deleteMutation = useDeleteAnthropicConversation();
-  const updateMutation = useUpdateAnthropicConversation();
-  const pinMutation = usePinAnthropicConversation();
-  const unpinMutation = useUnpinAnthropicConversation();
-  const duplicateMutation = useDuplicateAnthropicConversation();
-  const autoNameMutation = useAutoNameAnthropicConversation();
+  const createMutation = useCreateConversation();
+  const deleteMutation = useDeleteConversation();
+  const updateMutation = useUpdateConversation();
+  const pinMutation = usePinConversation();
+  const unpinMutation = useUnpinConversation();
+  const duplicateMutation = useDuplicateConversation();
+  const autoNameMutation = useAutoNameConversation();
 
   // Subscribe to SSE health events so sidebar server status updates immediately
   // when a health check fires (rather than waiting for the 60s poll interval).
@@ -108,7 +108,7 @@ export function Sidebar() {
   }, [editingId]);
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
 
   const handleNewChat = () => {
     createMutation.mutate(
@@ -196,7 +196,7 @@ export function Sidebar() {
     e.preventDefault();
     e.stopPropagation();
     const baseUrl = window.location.origin;
-    const url = baseUrl + getExportAnthropicConversationUrl(id, fmt);
+    const url = baseUrl + getExportConversationUrl(id, { format: fmt });
     window.open(url, "_blank");
   };
 

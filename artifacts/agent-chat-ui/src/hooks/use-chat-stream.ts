@@ -1,8 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicMessagesQueryKey, getListExecutionsQueryKey, getListAnthropicConversationsQueryKey, autoNameAnthropicConversation } from "@workspace/api-client-react";
-
-// ─── Typed event shapes (mirrors backend RunEvent) ──────────────────────────
+import { getListMessagesQueryKey, getListExecutionsQueryKey, getListConversationsQueryKey, autoNameConversation } from "@workspace/api-client-react";
 
 export type RunEventType =
   | "run.created" | "model.started"
@@ -17,8 +15,6 @@ export interface RunEvent {
   run_id?: string;
   [key: string]: unknown;
 }
-
-// ─── Live tool state ─────────────────────────────────────────────────────────
 
 export type LiveToolPhase = "starting" | "running" | "approval_required" | "done";
 
@@ -36,8 +32,6 @@ export interface LiveTool {
   error?: string;
 }
 
-// ─── Approval request ────────────────────────────────────────────────────────
-
 export interface ApprovalRequest {
   runId: string;
   toolId: string;
@@ -47,7 +41,6 @@ export interface ApprovalRequest {
   conversationId: number;
 }
 
-// ─── Legacy compatibility (for ToolExecutionCard still in history) ───────────
 export interface LiveToolExecution {
   phase: "planning" | "starting" | "selecting-server" | "running" | "done";
   executionId?: number;
@@ -73,15 +66,12 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
   const [streamedText, setStreamedText] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
 
-  // Thinking state
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingLines, setThinkingLines] = useState<string[]>([]);
   const [thinkingDone, setThinkingDone] = useState(false);
 
-  // Live tool state (new)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([]);
 
-  // Pending approval
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -123,7 +113,7 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
         body.toolArgs = toolParams.toolArgs;
       }
 
-      const response = await fetch(`/api/anthropic/conversations/${conversationId}/messages`, {
+      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -153,7 +143,6 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
           try {
             const data = JSON.parse(dataStr) as Record<string, unknown>;
 
-            // ── Handle typed events (new protocol) ────────────────────────
             if (typeof data.type === "string") {
               const event = data as RunEvent;
 
@@ -218,7 +207,6 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                 case "tool.approval_required": {
                   const currentRunId = event.run_id ?? "";
                   updateTool(event.tool_id as string, { phase: "approval_required" });
-                  // If no matching tool yet, create one
                   setLiveTools((prev) => {
                     const hasIt = prev.some((t) => t.toolId === (event.tool_id as string));
                     if (hasIt) return prev;
@@ -242,7 +230,6 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
                 }
 
                 case "artifact.created":
-                  // Large tool result — stdout already surfaced via tool.stdout event
                   break;
 
                 case "run.completed":
@@ -255,13 +242,12 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
               continue;
             }
 
-            // ── Legacy event format (backward compat) ─────────────────────
             if (data.done) {
               break outer;
             } else if (data.content) {
               setStreamedText((prev) => prev + (data.content as string));
             } else if (data.tool_execution) {
-              // legacy tool_execution events — map to liveTools for any old format consumers
+              // legacy
             } else if (data.error) {
               const streamErr = new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
               onError?.(streamErr);
@@ -283,15 +269,15 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
       setIsStreaming(false);
       setIsThinking(false);
       setPendingApproval(null);
-      queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
+      queryClient.invalidateQueries({ queryKey: getListMessagesQueryKey(conversationId) });
       queryClient.invalidateQueries({ queryKey: getListExecutionsQueryKey({ conversationId }) });
-      queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
       onFinish?.();
     }
 
-    autoNameAnthropicConversation(conversationId)
+    autoNameConversation(conversationId)
       .then((result) => {
-        queryClient.invalidateQueries({ queryKey: getListAnthropicConversationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
         onAutoNamed?.(result.title);
       })
       .catch(() => {});
@@ -306,7 +292,6 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     setPendingApproval(null);
   }, []);
 
-  // Approve or reject a pending tool
   const resolveApproval = useCallback(async (approve: boolean) => {
     if (!pendingApproval) return;
     const { runId: rid, toolId, conversationId: cid } = pendingApproval;
@@ -315,7 +300,7 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     updateTool(toolId, { phase: approve ? "running" : "done", success: approve ? undefined : false });
 
     try {
-      await fetch(`/api/anthropic/conversations/${cid}/runs/${rid}/approve`, {
+      await fetch(`/api/conversations/${cid}/runs/${rid}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool_id: toolId, approved: approve }),
@@ -325,7 +310,6 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     }
   }, [pendingApproval, updateTool]);
 
-  // Legacy compatibility: map liveTools to liveExecutions format
   const liveExecutions: LiveToolExecution[] = liveTools.map((t) => ({
     phase: t.phase === "approval_required" ? "running" : t.phase === "starting" ? "starting" : t.phase === "done" ? "done" : "running",
     executionId: t.executionId ?? undefined,
@@ -342,14 +326,12 @@ export function useChatStream({ conversationId, model, mode = "agent", onFinish,
     isStreaming,
     streamedText,
     runId,
-    // New state
     isThinking,
     thinkingLines,
     thinkingDone,
     liveTools,
     pendingApproval,
     resolveApproval,
-    // Legacy compat
     liveExecutions,
   };
 }

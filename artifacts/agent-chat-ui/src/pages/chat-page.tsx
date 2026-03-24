@@ -13,8 +13,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useListAnthropicMessages, useListExecutions, useCreateAnthropicConversation, useTruncateAnthropicMessagesFrom } from "@workspace/api-client-react";
-import type { AnthropicMessage, Execution } from "@workspace/api-client-react";
+import { useListMessages, useListExecutions, useCreateConversation, useTruncateMessagesFrom } from "@workspace/api-client-react";
+import type { ChatMessage, Execution } from "@workspace/api-client-react";
 import { useLocalSettings } from "@/hooks/use-local-settings";
 import { useChatStream } from "@/hooks/use-chat-stream";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -29,7 +29,7 @@ import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicMessagesQueryKey } from "@workspace/api-client-react";
+import { getListMessagesQueryKey } from "@workspace/api-client-react";
 
 function friendlyErrorMessage(err: Error): string {
   const msg = err.message.toLowerCase();
@@ -107,13 +107,13 @@ export default function ChatPage() {
   const [streamError, setStreamError] = useState<Error | null>(null);
 
   const { model, setModel, mode, setMode } = useLocalSettings();
-  const createMutation = useCreateAnthropicConversation();
-  const truncateMutation = useTruncateAnthropicMessagesFrom();
+  const createMutation = useCreateConversation();
+  const truncateMutation = useTruncateMessagesFrom();
   const queryClient = useQueryClient();
 
-  const { data: messages, isLoading: loadingMessages } = useListAnthropicMessages(
+  const { data: messages, isLoading: loadingMessages } = useListMessages(
     conversationId ?? 0,
-    { query: { enabled: !!conversationId, queryKey: ["anthropic-messages", conversationId] } }
+    { query: { enabled: !!conversationId, queryKey: ["messages", conversationId] } }
   );
 
   const { data: executions, isLoading: loadingExecutions } = useListExecutions(
@@ -177,7 +177,7 @@ export default function ChatPage() {
     if (!messages && !executions) return [];
 
     type TimelineItem =
-      | { type: "msg"; data: AnthropicMessage; time: number }
+      | { type: "msg"; data: ChatMessage; time: number }
       | { type: "exec"; data: Execution; time: number };
     const items: TimelineItem[] = [];
 
@@ -230,7 +230,7 @@ export default function ChatPage() {
       { id: conversationId, messageId: userMessage.id },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
+          queryClient.invalidateQueries({ queryKey: getListMessagesQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: ["executions", conversationId] });
           sendMessage(userMessage.content, undefined, undefined, retryModel);
         }
@@ -246,7 +246,7 @@ export default function ChatPage() {
       { id: conversationId, messageId: userMessageId },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
+          queryClient.invalidateQueries({ queryKey: getListMessagesQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: ["executions", conversationId] });
           sendMessage(newContent);
         }

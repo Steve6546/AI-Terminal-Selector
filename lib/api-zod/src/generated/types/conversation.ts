@@ -5,13 +5,13 @@
  * Agent Tool Chat API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { AnthropicMessage } from "./anthropicMessage";
 
-export interface AnthropicConversationWithMessages {
+export interface Conversation {
   id: number;
   title: string;
   model: string;
+  pinnedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  messages: AnthropicMessage[];
+  messageCount?: number;
 }

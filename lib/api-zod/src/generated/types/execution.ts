@@ -5,6 +5,7 @@
  * Agent Tool Chat API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ExecutionArguments } from "./executionArguments";
 import type { ExecutionStatus } from "./executionStatus";
 
 export interface Execution {
@@ -18,4 +19,6 @@ export interface Execution {
   completedAt?: Date;
   durationMs?: number;
   resultSummary?: string;
+  arguments?: ExecutionArguments;
+  rawResult?: string;
 }

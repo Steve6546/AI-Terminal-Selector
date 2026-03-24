@@ -18,38 +18,37 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List all conversations
  */
-export const ListAnthropicConversationsResponseItem = zod.object({
+export const ListConversationsResponseItem = zod.object({
   id: zod.number(),
   title: zod.string(),
   model: zod.string(),
+  pinnedAt: zod.date().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
   messageCount: zod.number().optional(),
 });
-export const ListAnthropicConversationsResponse = zod.array(
-  ListAnthropicConversationsResponseItem,
+export const ListConversationsResponse = zod.array(
+  ListConversationsResponseItem,
 );
 
 /**
  * @summary Create a new conversation
  */
-export const createAnthropicConversationBodyModelDefault = `claude-sonnet-4-6`;
+export const createConversationBodyModelDefault = `claude-sonnet-4-6`;
 
-export const CreateAnthropicConversationBody = zod.object({
+export const CreateConversationBody = zod.object({
   title: zod.string(),
-  model: zod
-    .enum(["claude-sonnet-4-6", "claude-opus-4-6"])
-    .default(createAnthropicConversationBodyModelDefault),
+  model: zod.string().default(createConversationBodyModelDefault),
 });
 
 /**
  * @summary Get conversation with messages
  */
-export const GetAnthropicConversationParams = zod.object({
+export const GetConversationParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const GetAnthropicConversationResponse = zod.object({
+export const GetConversationResponse = zod.object({
   id: zod.number(),
   title: zod.string(),
   model: zod.string(),
@@ -70,39 +69,104 @@ export const GetAnthropicConversationResponse = zod.object({
 /**
  * @summary Delete a conversation
  */
-export const DeleteAnthropicConversationParams = zod.object({
+export const DeleteConversationParams = zod.object({
   id: zod.coerce.number(),
 });
 
 /**
  * @summary Update a conversation (rename)
  */
-export const UpdateAnthropicConversationParams = zod.object({
+export const UpdateConversationParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const UpdateAnthropicConversationBody = zod.object({
+export const UpdateConversationBody = zod.object({
   title: zod.string().optional(),
-  model: zod.enum(["claude-sonnet-4-6", "claude-opus-4-6"]).optional(),
+  model: zod.string().optional(),
 });
 
-export const UpdateAnthropicConversationResponse = zod.object({
+export const UpdateConversationResponse = zod.object({
   id: zod.number(),
   title: zod.string(),
   model: zod.string(),
+  pinnedAt: zod.date().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
   messageCount: zod.number().optional(),
 });
 
 /**
- * @summary List messages in a conversation
+ * @summary Auto-name a conversation using AI
  */
-export const ListAnthropicMessagesParams = zod.object({
+export const AutoNameConversationParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const ListAnthropicMessagesResponseItem = zod.object({
+export const autoNameConversationQueryForceDefault = false;
+
+export const AutoNameConversationQueryParams = zod.object({
+  force: zod.coerce
+    .boolean()
+    .default(autoNameConversationQueryForceDefault)
+    .describe(
+      "When true, renames even if the title was manually set. When false (default), only renames if the title is still a default placeholder.",
+    ),
+});
+
+export const AutoNameConversationResponse = zod.object({
+  title: zod.string(),
+});
+
+/**
+ * @summary Pin a conversation
+ */
+export const PinConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PinConversationResponse = zod.object({
+  id: zod.number(),
+  pinnedAt: zod.date().nullable(),
+});
+
+/**
+ * @summary Unpin a conversation
+ */
+export const UnpinConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UnpinConversationResponse = zod.object({
+  id: zod.number(),
+  pinnedAt: zod.date().nullable(),
+});
+
+/**
+ * @summary Duplicate a conversation
+ */
+export const DuplicateConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Export a conversation as JSON or Markdown
+ */
+export const ExportConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ExportConversationQueryParams = zod.object({
+  format: zod.enum(["json", "markdown"]).optional(),
+});
+
+/**
+ * @summary List messages in a conversation
+ */
+export const ListMessagesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListMessagesResponseItem = zod.object({
   id: zod.number(),
   conversationId: zod.number(),
   role: zod.string(),
@@ -110,20 +174,26 @@ export const ListAnthropicMessagesResponseItem = zod.object({
   model: zod.string().optional(),
   createdAt: zod.date(),
 });
-export const ListAnthropicMessagesResponse = zod.array(
-  ListAnthropicMessagesResponseItem,
-);
+export const ListMessagesResponse = zod.array(ListMessagesResponseItem);
 
 /**
  * @summary Send a message and receive an AI response (SSE stream)
  */
-export const SendAnthropicMessageParams = zod.object({
+export const SendMessageParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const SendAnthropicMessageBody = zod.object({
+export const SendMessageBody = zod.object({
   content: zod.string(),
-  model: zod.enum(["claude-sonnet-4-6", "claude-opus-4-6"]).optional(),
+  model: zod.string().optional(),
+});
+
+/**
+ * @summary Delete all messages from a given message ID onward (inclusive)
+ */
+export const TruncateMessagesFromParams = zod.object({
+  id: zod.coerce.number(),
+  messageId: zod.coerce.number(),
 });
 
 /**
@@ -376,6 +446,8 @@ export const ListExecutionsResponseItem = zod.object({
   completedAt: zod.date().optional(),
   durationMs: zod.number().optional(),
   resultSummary: zod.string().optional(),
+  arguments: zod.record(zod.string(), zod.unknown()).optional(),
+  rawResult: zod.string().optional(),
 });
 export const ListExecutionsResponse = zod.array(ListExecutionsResponseItem);
 
@@ -384,7 +456,7 @@ export const ListExecutionsResponse = zod.array(ListExecutionsResponseItem);
  */
 export const GetSettingsResponse = zod.object({
   agentName: zod.string().optional(),
-  defaultModel: zod.enum(["claude-sonnet-4-6", "claude-opus-4-6"]).optional(),
+  defaultModel: zod.string().optional(),
   systemPrompt: zod.string().optional(),
   autoRun: zod.boolean().optional(),
   maxToolCalls: zod.number().optional(),
@@ -401,7 +473,7 @@ export const GetSettingsResponse = zod.object({
  */
 export const UpdateSettingsBody = zod.object({
   agentName: zod.string().optional(),
-  defaultModel: zod.enum(["claude-sonnet-4-6", "claude-opus-4-6"]).optional(),
+  defaultModel: zod.string().optional(),
   systemPrompt: zod.string().optional(),
   autoRun: zod.boolean().optional(),
   maxToolCalls: zod.number().optional(),
@@ -415,7 +487,7 @@ export const UpdateSettingsBody = zod.object({
 
 export const UpdateSettingsResponse = zod.object({
   agentName: zod.string().optional(),
-  defaultModel: zod.enum(["claude-sonnet-4-6", "claude-opus-4-6"]).optional(),
+  defaultModel: zod.string().optional(),
   systemPrompt: zod.string().optional(),
   autoRun: zod.boolean().optional(),
   maxToolCalls: zod.number().optional(),
@@ -456,6 +528,149 @@ export const ListExecutionLogsResponseItem = zod.object({
 export const ListExecutionLogsResponse = zod.array(
   ListExecutionLogsResponseItem,
 );
+
+/**
+ * @summary List all execution logs with optional filters
+ */
+export const listAllExecutionLogsQueryLimitDefault = 200;
+export const listAllExecutionLogsQueryLimitMax = 500;
+
+export const ListAllExecutionLogsQueryParams = zod.object({
+  level: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated log levels (info,warn,error,debug)"),
+  eventType: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated event types"),
+  serverId: zod.coerce.number().optional().describe("Filter by MCP server ID"),
+  after: zod.date().optional().describe("Return logs after this timestamp"),
+  before: zod.date().optional().describe("Return logs before this timestamp"),
+  limit: zod.coerce
+    .number()
+    .max(listAllExecutionLogsQueryLimitMax)
+    .default(listAllExecutionLogsQueryLimitDefault)
+    .describe("Maximum number of results to return"),
+});
+
+export const ListAllExecutionLogsResponseItem = zod.object({
+  id: zod.number(),
+  executionId: zod.number(),
+  level: zod.string(),
+  eventType: zod.string().optional(),
+  message: zod.string(),
+  createdAt: zod.date(),
+  toolName: zod.string().nullish(),
+  executionStatus: zod.string().nullish(),
+  serverId: zod.number().nullish(),
+  serverName: zod.string().nullish(),
+});
+export const ListAllExecutionLogsResponse = zod.array(
+  ListAllExecutionLogsResponseItem,
+);
+
+/**
+ * @summary List all database connections
+ */
+export const ListDatabaseConnectionsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  type: zod.enum(["postgresql", "mysql"]),
+  host: zod.string().optional(),
+  port: zod.number().optional(),
+  username: zod.string().optional(),
+  database: zod.string(),
+  ssl: zod.boolean().optional(),
+  status: zod.enum(["connected", "disconnected", "error"]),
+  lastTestedAt: zod.date().nullish(),
+  createdAt: zod.date(),
+});
+export const ListDatabaseConnectionsResponse = zod.array(
+  ListDatabaseConnectionsResponseItem,
+);
+
+/**
+ * @summary Create a new database connection
+ */
+export const createDatabaseConnectionBodySslDefault = false;
+
+export const CreateDatabaseConnectionBody = zod.object({
+  name: zod.string(),
+  type: zod.enum(["postgresql", "mysql"]),
+  host: zod.string().optional(),
+  port: zod.number().optional(),
+  username: zod.string().optional(),
+  password: zod.string().optional(),
+  database: zod.string(),
+  ssl: zod.boolean().default(createDatabaseConnectionBodySslDefault),
+});
+
+export const CreateDatabaseConnectionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  type: zod.enum(["postgresql", "mysql"]),
+  host: zod.string().optional(),
+  port: zod.number().optional(),
+  username: zod.string().optional(),
+  database: zod.string(),
+  ssl: zod.boolean().optional(),
+  status: zod.enum(["connected", "disconnected", "error"]),
+  lastTestedAt: zod.date().nullish(),
+  createdAt: zod.date(),
+});
+
+/**
+ * @summary Update a database connection
+ */
+export const UpdateDatabaseConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDatabaseConnectionBody = zod.object({
+  name: zod.string().optional(),
+  type: zod.enum(["postgresql", "mysql"]).optional(),
+  host: zod.string().optional(),
+  port: zod.number().optional(),
+  username: zod.string().optional(),
+  password: zod.string().optional(),
+  database: zod.string().optional(),
+  ssl: zod.boolean().optional(),
+});
+
+export const UpdateDatabaseConnectionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  type: zod.enum(["postgresql", "mysql"]),
+  host: zod.string().optional(),
+  port: zod.number().optional(),
+  username: zod.string().optional(),
+  database: zod.string(),
+  ssl: zod.boolean().optional(),
+  status: zod.enum(["connected", "disconnected", "error"]),
+  lastTestedAt: zod.date().nullish(),
+  createdAt: zod.date(),
+});
+
+/**
+ * @summary Delete a database connection
+ */
+export const DeleteDatabaseConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Test a database connection
+ */
+export const TestDatabaseConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const TestDatabaseConnectionResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+  latencyMs: zod.number().nullish(),
+});
 
 /**
  * @summary List attachments, optionally filtered by conversation

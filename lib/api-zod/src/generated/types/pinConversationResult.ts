@@ -6,11 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AnthropicConversation {
+export interface PinConversationResult {
   id: number;
-  title: string;
-  model: string;
-  createdAt: Date;
-  updatedAt: Date;
-  messageCount?: number;
+  pinnedAt: Date | null;
 }

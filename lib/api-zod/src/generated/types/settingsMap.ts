@@ -5,12 +5,11 @@
  * Agent Tool Chat API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { SettingsMapDefaultModel } from "./settingsMapDefaultModel";
 import type { SettingsMapTheme } from "./settingsMapTheme";
 
 export interface SettingsMap {
   agentName?: string;
-  defaultModel?: SettingsMapDefaultModel;
+  defaultModel?: string;
   systemPrompt?: string;
   autoRun?: boolean;
   maxToolCalls?: number;

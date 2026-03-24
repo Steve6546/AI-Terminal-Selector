@@ -17,25 +17,26 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
-  AnthropicConversation,
-  AnthropicConversationWithMessages,
-  AnthropicError,
-  AnthropicMessage,
-  AutoNameConversationResult,
+  ApiError,
   Attachment,
-  CreateAnthropicConversationBody,
+  AutoNameConversationParams,
+  AutoNameConversationResult,
+  ChatMessage,
+  Conversation,
+  ConversationWithMessages,
   CreateAttachmentBody,
+  CreateConversationBody,
+  CreateDatabaseConnectionBody,
   CreateMcpServerBody,
   DatabaseConnection,
-  CreateDatabaseConnectionBody,
-  UpdateDatabaseConnectionBody,
   DatabaseConnectionTestResult,
   DuplicateConversationResult,
   Execution,
   ExecutionLog,
   ExecutionLogExtended,
-  ListExecutionLogsParams,
+  ExportConversationParams,
   HealthStatus,
+  ListAllExecutionLogsParams,
   ListAttachmentsParams,
   ListExecutionsParams,
   McpConnectionTestResult,
@@ -44,10 +45,11 @@ import type {
   McpServer,
   McpTool,
   PinConversationResult,
-  SendAnthropicMessageBody,
+  SendMessageBody,
   SettingsMap,
   SystemStatus,
-  UpdateAnthropicConversationBody,
+  UpdateConversationBody,
+  UpdateDatabaseConnectionBody,
   UpdateMcpServerBody,
   UpdateMcpToolBody,
 } from "./api.schemas";
@@ -140,32 +142,29 @@ export function useHealthCheck<
 /**
  * @summary List all conversations
  */
-export const getListAnthropicConversationsUrl = () => {
-  return `/api/anthropic/conversations`;
+export const getListConversationsUrl = () => {
+  return `/api/conversations`;
 };
 
-export const listAnthropicConversations = async (
+export const listConversations = async (
   options?: RequestInit,
-): Promise<AnthropicConversation[]> => {
-  return customFetch<AnthropicConversation[]>(
-    getListAnthropicConversationsUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
+): Promise<Conversation[]> => {
+  return customFetch<Conversation[]>(getListConversationsUrl(), {
+    ...options,
+    method: "GET",
+  });
 };
 
-export const getListAnthropicConversationsQueryKey = () => {
-  return [`/api/anthropic/conversations`] as const;
+export const getListConversationsQueryKey = () => {
+  return [`/api/conversations`] as const;
 };
 
-export const getListAnthropicConversationsQueryOptions = <
-  TData = Awaited<ReturnType<typeof listAnthropicConversations>>,
+export const getListConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listConversations>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listAnthropicConversations>>,
+    Awaited<ReturnType<typeof listConversations>>,
     TError,
     TData
   >;
@@ -173,41 +172,40 @@ export const getListAnthropicConversationsQueryOptions = <
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getListAnthropicConversationsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListConversationsQueryKey();
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listAnthropicConversations>>
-  > = ({ signal }) => listAnthropicConversations({ signal, ...requestOptions });
+    Awaited<ReturnType<typeof listConversations>>
+  > = ({ signal }) => listConversations({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listAnthropicConversations>>,
+    Awaited<ReturnType<typeof listConversations>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type ListAnthropicConversationsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listAnthropicConversations>>
+export type ListConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listConversations>>
 >;
-export type ListAnthropicConversationsQueryError = ErrorType<unknown>;
+export type ListConversationsQueryError = ErrorType<unknown>;
 
 /**
  * @summary List all conversations
  */
 
-export function useListAnthropicConversations<
-  TData = Awaited<ReturnType<typeof listAnthropicConversations>>,
+export function useListConversations<
+  TData = Awaited<ReturnType<typeof listConversations>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listAnthropicConversations>>,
+    Awaited<ReturnType<typeof listConversations>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListAnthropicConversationsQueryOptions(options);
+  const queryOptions = getListConversationsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -219,43 +217,40 @@ export function useListAnthropicConversations<
 /**
  * @summary Create a new conversation
  */
-export const getCreateAnthropicConversationUrl = () => {
-  return `/api/anthropic/conversations`;
+export const getCreateConversationUrl = () => {
+  return `/api/conversations`;
 };
 
-export const createAnthropicConversation = async (
-  createAnthropicConversationBody: CreateAnthropicConversationBody,
+export const createConversation = async (
+  createConversationBody: CreateConversationBody,
   options?: RequestInit,
-): Promise<AnthropicConversation> => {
-  return customFetch<AnthropicConversation>(
-    getCreateAnthropicConversationUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createAnthropicConversationBody),
-    },
-  );
+): Promise<Conversation> => {
+  return customFetch<Conversation>(getCreateConversationUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createConversationBody),
+  });
 };
 
-export const getCreateAnthropicConversationMutationOptions = <
+export const getCreateConversationMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createAnthropicConversation>>,
+    Awaited<ReturnType<typeof createConversation>>,
     TError,
-    { data: BodyType<CreateAnthropicConversationBody> },
+    { data: BodyType<CreateConversationBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof createAnthropicConversation>>,
+  Awaited<ReturnType<typeof createConversation>>,
   TError,
-  { data: BodyType<CreateAnthropicConversationBody> },
+  { data: BodyType<CreateConversationBody> },
   TContext
 > => {
-  const mutationKey = ["createAnthropicConversation"];
+  const mutationKey = ["createConversation"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -265,503 +260,714 @@ export const getCreateAnthropicConversationMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createAnthropicConversation>>,
-    { data: BodyType<CreateAnthropicConversationBody> }
+    Awaited<ReturnType<typeof createConversation>>,
+    { data: BodyType<CreateConversationBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return createAnthropicConversation(data, requestOptions);
+    return createConversation(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type CreateAnthropicConversationMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createAnthropicConversation>>
+export type CreateConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createConversation>>
 >;
-export type CreateAnthropicConversationMutationBody =
-  BodyType<CreateAnthropicConversationBody>;
-export type CreateAnthropicConversationMutationError = ErrorType<unknown>;
+export type CreateConversationMutationBody = BodyType<CreateConversationBody>;
+export type CreateConversationMutationError = ErrorType<unknown>;
 
 /**
  * @summary Create a new conversation
  */
-export const useCreateAnthropicConversation = <
+export const useCreateConversation = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createAnthropicConversation>>,
+    Awaited<ReturnType<typeof createConversation>>,
     TError,
-    { data: BodyType<CreateAnthropicConversationBody> },
+    { data: BodyType<CreateConversationBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof createAnthropicConversation>>,
+  Awaited<ReturnType<typeof createConversation>>,
   TError,
-  { data: BodyType<CreateAnthropicConversationBody> },
+  { data: BodyType<CreateConversationBody> },
   TContext
 > => {
-  return useMutation(getCreateAnthropicConversationMutationOptions(options));
+  return useMutation(getCreateConversationMutationOptions(options));
 };
 
 /**
  * @summary Get conversation with messages
  */
-export const getGetAnthropicConversationUrl = (id: number) => {
-  return `/api/anthropic/conversations/${id}`;
+export const getGetConversationUrl = (id: number) => {
+  return `/api/conversations/${id}`;
 };
 
-export const getAnthropicConversation = async (
+export const getConversation = async (
   id: number,
   options?: RequestInit,
-): Promise<AnthropicConversationWithMessages> => {
-  return customFetch<AnthropicConversationWithMessages>(
-    getGetAnthropicConversationUrl(id),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
-
-export const getGetAnthropicConversationQueryKey = (id: number) => {
-  return [`/api/anthropic/conversations/${id}`] as const;
-};
-
-export const getGetAnthropicConversationQueryOptions = <
-  TData = Awaited<ReturnType<typeof getAnthropicConversation>>,
-  TError = ErrorType<AnthropicError>,
->(
-  id: number,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getAnthropicConversation>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ?? getGetAnthropicConversationQueryKey(id);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getAnthropicConversation>>
-  > = ({ signal }) =>
-    getAnthropicConversation(id, { signal, ...requestOptions });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!id,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof getAnthropicConversation>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetAnthropicConversationQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getAnthropicConversation>>
->;
-export type GetAnthropicConversationQueryError = ErrorType<AnthropicError>;
-
-/**
- * @summary Get conversation with messages
- */
-
-export function useGetAnthropicConversation<
-  TData = Awaited<ReturnType<typeof getAnthropicConversation>>,
-  TError = ErrorType<AnthropicError>,
->(
-  id: number,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getAnthropicConversation>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetAnthropicConversationQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary Delete a conversation
- */
-export const getDeleteAnthropicConversationUrl = (id: number) => {
-  return `/api/anthropic/conversations/${id}`;
-};
-
-export const deleteAnthropicConversation = async (
-  id: number,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteAnthropicConversationUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteAnthropicConversationMutationOptions = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["deleteAnthropicConversation"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-    { id: number }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return deleteAnthropicConversation(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteAnthropicConversationMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteAnthropicConversation>>
->;
-
-export type DeleteAnthropicConversationMutationError =
-  ErrorType<AnthropicError>;
-
-/**
- * @summary Delete a conversation
- */
-export const useDeleteAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation(getDeleteAnthropicConversationMutationOptions(options));
-};
-
-/**
- * @summary Update a conversation (rename)
- */
-export const getUpdateAnthropicConversationUrl = (id: number) => {
-  return `/api/anthropic/conversations/${id}`;
-};
-
-export const updateAnthropicConversation = async (
-  id: number,
-  updateAnthropicConversationBody: UpdateAnthropicConversationBody,
-  options?: RequestInit,
-): Promise<AnthropicConversation> => {
-  return customFetch<AnthropicConversation>(
-    getUpdateAnthropicConversationUrl(id),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateAnthropicConversationBody),
-    },
-  );
-};
-
-export const getUpdateAnthropicConversationMutationOptions = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAnthropicConversation>>,
-    TError,
-    { id: number; data: BodyType<UpdateAnthropicConversationBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateAnthropicConversation>>,
-  TError,
-  { id: number; data: BodyType<UpdateAnthropicConversationBody> },
-  TContext
-> => {
-  const mutationKey = ["updateAnthropicConversation"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateAnthropicConversation>>,
-    { id: number; data: BodyType<UpdateAnthropicConversationBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return updateAnthropicConversation(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type UpdateAnthropicConversationMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateAnthropicConversation>>
->;
-export type UpdateAnthropicConversationMutationBody =
-  BodyType<UpdateAnthropicConversationBody>;
-export type UpdateAnthropicConversationMutationError =
-  ErrorType<AnthropicError>;
-
-/**
- * @summary Update a conversation (rename)
- */
-export const useUpdateAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAnthropicConversation>>,
-    TError,
-    { id: number; data: BodyType<UpdateAnthropicConversationBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof updateAnthropicConversation>>,
-  TError,
-  { id: number; data: BodyType<UpdateAnthropicConversationBody> },
-  TContext
-> => {
-  return useMutation(getUpdateAnthropicConversationMutationOptions(options));
-};
-
-// ─── Auto-name ────────────────────────────────────────────────────────────────
-export const getAutoNameAnthropicConversationUrl = (id: number, force?: boolean) => {
-  const url = `/api/anthropic/conversations/${id}/auto-name`;
-  return force ? `${url}?force=true` : url;
-};
-
-/**
- * autoNameAnthropicConversation — calls the auto-name endpoint.
- * When force=false (default), the server only renames if the title is still a default placeholder.
- * When force=true, the server always renames (for manual "Auto-name with AI" action).
- */
-export const autoNameAnthropicConversation = async (
-  id: number,
-  force?: boolean,
-  options?: RequestInit,
-): Promise<AutoNameConversationResult> => {
-  return customFetch<AutoNameConversationResult>(
-    getAutoNameAnthropicConversationUrl(id, force),
-    { ...options, method: "POST" },
-  );
-};
-
-export const useAutoNameAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof autoNameAnthropicConversation>>,
-    TError,
-    { id: number; force?: boolean },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof autoNameAnthropicConversation>>,
-  TError,
-  { id: number; force?: boolean },
-  TContext
-> => {
-  return useMutation({
-    mutationFn: ({ id, force }) => autoNameAnthropicConversation(id, force),
-    ...options?.mutation,
-  });
-};
-
-// ─── Pin ──────────────────────────────────────────────────────────────────────
-export const getPinAnthropicConversationUrl = (id: number) =>
-  `/api/anthropic/conversations/${id}/pin`;
-
-export const pinAnthropicConversation = async (
-  id: number,
-  options?: RequestInit,
-): Promise<PinConversationResult> => {
-  return customFetch<PinConversationResult>(getPinAnthropicConversationUrl(id), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const usePinAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof pinAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof pinAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation({
-    mutationFn: ({ id }) => pinAnthropicConversation(id),
-    ...options?.mutation,
-  });
-};
-
-// ─── Unpin ────────────────────────────────────────────────────────────────────
-export const getUnpinAnthropicConversationUrl = (id: number) =>
-  `/api/anthropic/conversations/${id}/unpin`;
-
-export const unpinAnthropicConversation = async (
-  id: number,
-  options?: RequestInit,
-): Promise<PinConversationResult> => {
-  return customFetch<PinConversationResult>(
-    getUnpinAnthropicConversationUrl(id),
-    { ...options, method: "POST" },
-  );
-};
-
-export const useUnpinAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unpinAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof unpinAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation({
-    mutationFn: ({ id }) => unpinAnthropicConversation(id),
-    ...options?.mutation,
-  });
-};
-
-// ─── Duplicate ────────────────────────────────────────────────────────────────
-export const getDuplicateAnthropicConversationUrl = (id: number) =>
-  `/api/anthropic/conversations/${id}/duplicate`;
-
-export const duplicateAnthropicConversation = async (
-  id: number,
-  options?: RequestInit,
-): Promise<DuplicateConversationResult> => {
-  return customFetch<DuplicateConversationResult>(
-    getDuplicateAnthropicConversationUrl(id),
-    { ...options, method: "POST" },
-  );
-};
-
-export const useDuplicateAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof duplicateAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof duplicateAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation({
-    mutationFn: ({ id }) => duplicateAnthropicConversation(id),
-    ...options?.mutation,
-  });
-};
-
-// ─── Export URL helper ────────────────────────────────────────────────────────
-export const getExportAnthropicConversationUrl = (
-  id: number,
-  format: "json" | "markdown" = "json",
-) => `/api/anthropic/conversations/${id}/export?format=${format}`;
-
-/**
- * @summary List messages in a conversation
- */
-export const getListAnthropicMessagesUrl = (id: number) => {
-  return `/api/anthropic/conversations/${id}/messages`;
-};
-
-export const listAnthropicMessages = async (
-  id: number,
-  options?: RequestInit,
-): Promise<AnthropicMessage[]> => {
-  return customFetch<AnthropicMessage[]>(getListAnthropicMessagesUrl(id), {
+): Promise<ConversationWithMessages> => {
+  return customFetch<ConversationWithMessages>(getGetConversationUrl(id), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListAnthropicMessagesQueryKey = (id: number) => {
-  return [`/api/anthropic/conversations/${id}/messages`] as const;
+export const getGetConversationQueryKey = (id: number) => {
+  return [`/api/conversations/${id}`] as const;
 };
 
-export const getListAnthropicMessagesQueryOptions = <
-  TData = Awaited<ReturnType<typeof listAnthropicMessages>>,
-  TError = ErrorType<unknown>,
+export const getGetConversationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConversation>>,
+  TError = ErrorType<ApiError>,
 >(
   id: number,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof listAnthropicMessages>>,
+      Awaited<ReturnType<typeof getConversation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetConversationQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversation>>> = ({
+    signal,
+  }) => getConversation(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConversation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetConversationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConversation>>
+>;
+export type GetConversationQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get conversation with messages
+ */
+
+export function useGetConversation<
+  TData = Awaited<ReturnType<typeof getConversation>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getConversation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetConversationQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete a conversation
+ */
+export const getDeleteConversationUrl = (id: number) => {
+  return `/api/conversations/${id}`;
+};
+
+export const deleteConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteConversationUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteConversationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteConversation>>
+>;
+
+export type DeleteConversationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete a conversation
+ */
+export const useDeleteConversation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteConversationMutationOptions(options));
+};
+
+/**
+ * @summary Update a conversation (rename)
+ */
+export const getUpdateConversationUrl = (id: number) => {
+  return `/api/conversations/${id}`;
+};
+
+export const updateConversation = async (
+  id: number,
+  updateConversationBody: UpdateConversationBody,
+  options?: RequestInit,
+): Promise<Conversation> => {
+  return customFetch<Conversation>(getUpdateConversationUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateConversationBody),
+  });
+};
+
+export const getUpdateConversationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateConversation>>,
+    TError,
+    { id: number; data: BodyType<UpdateConversationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateConversation>>,
+  TError,
+  { id: number; data: BodyType<UpdateConversationBody> },
+  TContext
+> => {
+  const mutationKey = ["updateConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateConversation>>,
+    { id: number; data: BodyType<UpdateConversationBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateConversation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateConversation>>
+>;
+export type UpdateConversationMutationBody = BodyType<UpdateConversationBody>;
+export type UpdateConversationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update a conversation (rename)
+ */
+export const useUpdateConversation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateConversation>>,
+    TError,
+    { id: number; data: BodyType<UpdateConversationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateConversation>>,
+  TError,
+  { id: number; data: BodyType<UpdateConversationBody> },
+  TContext
+> => {
+  return useMutation(getUpdateConversationMutationOptions(options));
+};
+
+/**
+ * @summary Auto-name a conversation using AI
+ */
+export const getAutoNameConversationUrl = (
+  id: number,
+  params?: AutoNameConversationParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/conversations/${id}/auto-name?${stringifiedParams}`
+    : `/api/conversations/${id}/auto-name`;
+};
+
+export const autoNameConversation = async (
+  id: number,
+  params?: AutoNameConversationParams,
+  options?: RequestInit,
+): Promise<AutoNameConversationResult> => {
+  return customFetch<AutoNameConversationResult>(
+    getAutoNameConversationUrl(id, params),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getAutoNameConversationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoNameConversation>>,
+    TError,
+    { id: number; params?: AutoNameConversationParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof autoNameConversation>>,
+  TError,
+  { id: number; params?: AutoNameConversationParams },
+  TContext
+> => {
+  const mutationKey = ["autoNameConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof autoNameConversation>>,
+    { id: number; params?: AutoNameConversationParams }
+  > = (props) => {
+    const { id, params } = props ?? {};
+
+    return autoNameConversation(id, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AutoNameConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof autoNameConversation>>
+>;
+
+export type AutoNameConversationMutationError = ErrorType<void>;
+
+/**
+ * @summary Auto-name a conversation using AI
+ */
+export const useAutoNameConversation = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoNameConversation>>,
+    TError,
+    { id: number; params?: AutoNameConversationParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof autoNameConversation>>,
+  TError,
+  { id: number; params?: AutoNameConversationParams },
+  TContext
+> => {
+  return useMutation(getAutoNameConversationMutationOptions(options));
+};
+
+/**
+ * @summary Pin a conversation
+ */
+export const getPinConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/pin`;
+};
+
+export const pinConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PinConversationResult> => {
+  return customFetch<PinConversationResult>(getPinConversationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getPinConversationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pinConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pinConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["pinConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pinConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return pinConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PinConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pinConversation>>
+>;
+
+export type PinConversationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Pin a conversation
+ */
+export const usePinConversation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pinConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pinConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getPinConversationMutationOptions(options));
+};
+
+/**
+ * @summary Unpin a conversation
+ */
+export const getUnpinConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/unpin`;
+};
+
+export const unpinConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PinConversationResult> => {
+  return customFetch<PinConversationResult>(getUnpinConversationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnpinConversationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unpinConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unpinConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["unpinConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unpinConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unpinConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnpinConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unpinConversation>>
+>;
+
+export type UnpinConversationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Unpin a conversation
+ */
+export const useUnpinConversation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unpinConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unpinConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getUnpinConversationMutationOptions(options));
+};
+
+/**
+ * @summary Duplicate a conversation
+ */
+export const getDuplicateConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/duplicate`;
+};
+
+export const duplicateConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DuplicateConversationResult> => {
+  return customFetch<DuplicateConversationResult>(
+    getDuplicateConversationUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getDuplicateConversationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof duplicateConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof duplicateConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["duplicateConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof duplicateConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return duplicateConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DuplicateConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof duplicateConversation>>
+>;
+
+export type DuplicateConversationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Duplicate a conversation
+ */
+export const useDuplicateConversation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof duplicateConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof duplicateConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDuplicateConversationMutationOptions(options));
+};
+
+/**
+ * @summary Export a conversation as JSON or Markdown
+ */
+export const getExportConversationUrl = (
+  id: number,
+  params?: ExportConversationParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/conversations/${id}/export?${stringifiedParams}`
+    : `/api/conversations/${id}/export`;
+};
+
+export const exportConversation = async (
+  id: number,
+  params?: ExportConversationParams,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getExportConversationUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportConversationQueryKey = (
+  id: number,
+  params?: ExportConversationParams,
+) => {
+  return [
+    `/api/conversations/${id}/export`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExportConversationQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportConversation>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ExportConversationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportConversation>>,
       TError,
       TData
     >;
@@ -771,11 +977,12 @@ export const getListAnthropicMessagesQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getListAnthropicMessagesQueryKey(id);
+    queryOptions?.queryKey ?? getExportConversationQueryKey(id, params);
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listAnthropicMessages>>
-  > = ({ signal }) => listAnthropicMessages(id, { signal, ...requestOptions });
+    Awaited<ReturnType<typeof exportConversation>>
+  > = ({ signal }) =>
+    exportConversation(id, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -783,36 +990,124 @@ export const getListAnthropicMessagesQueryOptions = <
     enabled: !!id,
     ...queryOptions,
   } as UseQueryOptions<
-    Awaited<ReturnType<typeof listAnthropicMessages>>,
+    Awaited<ReturnType<typeof exportConversation>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type ListAnthropicMessagesQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listAnthropicMessages>>
+export type ExportConversationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportConversation>>
 >;
-export type ListAnthropicMessagesQueryError = ErrorType<unknown>;
+export type ExportConversationQueryError = ErrorType<unknown>;
 
 /**
- * @summary List messages in a conversation
+ * @summary Export a conversation as JSON or Markdown
  */
 
-export function useListAnthropicMessages<
-  TData = Awaited<ReturnType<typeof listAnthropicMessages>>,
+export function useExportConversation<
+  TData = Awaited<ReturnType<typeof exportConversation>>,
   TError = ErrorType<unknown>,
 >(
   id: number,
+  params?: ExportConversationParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof listAnthropicMessages>>,
+      Awaited<ReturnType<typeof exportConversation>>,
       TError,
       TData
     >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListAnthropicMessagesQueryOptions(id, options);
+  const queryOptions = getExportConversationQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List messages in a conversation
+ */
+export const getListMessagesUrl = (id: number) => {
+  return `/api/conversations/${id}/messages`;
+};
+
+export const listMessages = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ChatMessage[]> => {
+  return customFetch<ChatMessage[]>(getListMessagesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMessagesQueryKey = (id: number) => {
+  return [`/api/conversations/${id}/messages`] as const;
+};
+
+export const getListMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMessagesQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMessages>>> = ({
+    signal,
+  }) => listMessages(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMessages>>
+>;
+export type ListMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List messages in a conversation
+ */
+
+export function useListMessages<
+  TData = Awaited<ReturnType<typeof listMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMessagesQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -824,41 +1119,41 @@ export function useListAnthropicMessages<
 /**
  * @summary Send a message and receive an AI response (SSE stream)
  */
-export const getSendAnthropicMessageUrl = (id: number) => {
-  return `/api/anthropic/conversations/${id}/messages`;
+export const getSendMessageUrl = (id: number) => {
+  return `/api/conversations/${id}/messages`;
 };
 
-export const sendAnthropicMessage = async (
+export const sendMessage = async (
   id: number,
-  sendAnthropicMessageBody: SendAnthropicMessageBody,
+  sendMessageBody: SendMessageBody,
   options?: RequestInit,
 ): Promise<unknown> => {
-  return customFetch<unknown>(getSendAnthropicMessageUrl(id), {
+  return customFetch<unknown>(getSendMessageUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(sendAnthropicMessageBody),
+    body: JSON.stringify(sendMessageBody),
   });
 };
 
-export const getSendAnthropicMessageMutationOptions = <
+export const getSendMessageMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof sendAnthropicMessage>>,
+    Awaited<ReturnType<typeof sendMessage>>,
     TError,
-    { id: number; data: BodyType<SendAnthropicMessageBody> },
+    { id: number; data: BodyType<SendMessageBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof sendAnthropicMessage>>,
+  Awaited<ReturnType<typeof sendMessage>>,
   TError,
-  { id: number; data: BodyType<SendAnthropicMessageBody> },
+  { id: number; data: BodyType<SendMessageBody> },
   TContext
 > => {
-  const mutationKey = ["sendAnthropicMessage"];
+  const mutationKey = ["sendMessage"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -868,83 +1163,82 @@ export const getSendAnthropicMessageMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof sendAnthropicMessage>>,
-    { id: number; data: BodyType<SendAnthropicMessageBody> }
+    Awaited<ReturnType<typeof sendMessage>>,
+    { id: number; data: BodyType<SendMessageBody> }
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return sendAnthropicMessage(id, data, requestOptions);
+    return sendMessage(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type SendAnthropicMessageMutationResult = NonNullable<
-  Awaited<ReturnType<typeof sendAnthropicMessage>>
+export type SendMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendMessage>>
 >;
-export type SendAnthropicMessageMutationBody =
-  BodyType<SendAnthropicMessageBody>;
-export type SendAnthropicMessageMutationError = ErrorType<unknown>;
+export type SendMessageMutationBody = BodyType<SendMessageBody>;
+export type SendMessageMutationError = ErrorType<unknown>;
 
 /**
  * @summary Send a message and receive an AI response (SSE stream)
  */
-export const useSendAnthropicMessage = <
+export const useSendMessage = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof sendAnthropicMessage>>,
+    Awaited<ReturnType<typeof sendMessage>>,
     TError,
-    { id: number; data: BodyType<SendAnthropicMessageBody> },
+    { id: number; data: BodyType<SendMessageBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof sendAnthropicMessage>>,
+  Awaited<ReturnType<typeof sendMessage>>,
   TError,
-  { id: number; data: BodyType<SendAnthropicMessageBody> },
+  { id: number; data: BodyType<SendMessageBody> },
   TContext
 > => {
-  return useMutation(getSendAnthropicMessageMutationOptions(options));
+  return useMutation(getSendMessageMutationOptions(options));
 };
 
 /**
  * @summary Delete all messages from a given message ID onward (inclusive)
  */
-export const getTruncateAnthropicMessagesFromUrl = (id: number, messageId: number) => {
-  return `/api/anthropic/conversations/${id}/messages-from/${messageId}`;
+export const getTruncateMessagesFromUrl = (id: number, messageId: number) => {
+  return `/api/conversations/${id}/messages-from/${messageId}`;
 };
 
-export const truncateAnthropicMessagesFrom = async (
+export const truncateMessagesFrom = async (
   id: number,
   messageId: number,
   options?: RequestInit,
 ): Promise<void> => {
-  return customFetch<void>(getTruncateAnthropicMessagesFromUrl(id, messageId), {
+  return customFetch<void>(getTruncateMessagesFromUrl(id, messageId), {
     ...options,
     method: "DELETE",
   });
 };
 
-export const getTruncateAnthropicMessagesFromMutationOptions = <
-  TError = ErrorType<unknown>,
+export const getTruncateMessagesFromMutationOptions = <
+  TError = ErrorType<ApiError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+    Awaited<ReturnType<typeof truncateMessagesFrom>>,
     TError,
     { id: number; messageId: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+  Awaited<ReturnType<typeof truncateMessagesFrom>>,
   TError,
   { id: number; messageId: number },
   TContext
 > => {
-  const mutationKey = ["truncateAnthropicMessagesFrom"];
+  const mutationKey = ["truncateMessagesFrom"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -954,39 +1248,44 @@ export const getTruncateAnthropicMessagesFromMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+    Awaited<ReturnType<typeof truncateMessagesFrom>>,
     { id: number; messageId: number }
   > = (props) => {
     const { id, messageId } = props ?? {};
-    return truncateAnthropicMessagesFrom(id, messageId, requestOptions);
+
+    return truncateMessagesFrom(id, messageId, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type TruncateAnthropicMessagesFromMutationResult = NonNullable<
-  Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>
+export type TruncateMessagesFromMutationResult = NonNullable<
+  Awaited<ReturnType<typeof truncateMessagesFrom>>
 >;
-export type TruncateAnthropicMessagesFromMutationError = ErrorType<unknown>;
 
-export const useTruncateAnthropicMessagesFrom = <
-  TError = ErrorType<unknown>,
+export type TruncateMessagesFromMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete all messages from a given message ID onward (inclusive)
+ */
+export const useTruncateMessagesFrom = <
+  TError = ErrorType<ApiError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+    Awaited<ReturnType<typeof truncateMessagesFrom>>,
     TError,
     { id: number; messageId: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof truncateAnthropicMessagesFrom>>,
+  Awaited<ReturnType<typeof truncateMessagesFrom>>,
   TError,
   { id: number; messageId: number },
   TContext
 > => {
-  return useMutation(getTruncateAnthropicMessagesFromMutationOptions(options));
+  return useMutation(getTruncateMessagesFromMutationOptions(options));
 };
 
 /**
@@ -2258,6 +2557,90 @@ export function useGetSystemStatus<
 }
 
 /**
+ * Server-Sent Events (SSE) stream that emits `server_status` events whenever the
+background health-check job updates an MCP server's connectivity status. A heartbeat
+comment is sent every 30 seconds to keep the connection alive.
+Each `server_status` event data is a JSON object with fields:
+- `serverId` (integer)
+- `name` (string)
+- `status` ("connected" | "error")
+- `lastCheckedAt` (ISO 8601 timestamp)
+
+ * @summary SSE stream of real-time MCP server health-check events
+ */
+export const getGetSystemStatusEventsUrl = () => {
+  return `/api/system/status/events`;
+};
+
+export const getSystemStatusEvents = async (
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getGetSystemStatusEventsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSystemStatusEventsQueryKey = () => {
+  return [`/api/system/status/events`] as const;
+};
+
+export const getGetSystemStatusEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemStatusEvents>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemStatusEvents>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSystemStatusEventsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemStatusEvents>>
+  > = ({ signal }) => getSystemStatusEvents({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemStatusEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemStatusEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemStatusEvents>>
+>;
+export type GetSystemStatusEventsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary SSE stream of real-time MCP server health-check events
+ */
+
+export function useGetSystemStatusEvents<
+  TData = Awaited<ReturnType<typeof getSystemStatusEvents>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemStatusEvents>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemStatusEventsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary List logs for a specific execution
  */
 export const getListExecutionLogsUrl = (executionId: number) => {
@@ -2345,6 +2728,531 @@ export function useListExecutionLogs<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List all execution logs with optional filters
+ */
+export const getListAllExecutionLogsUrl = (
+  params?: ListAllExecutionLogsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/execution-logs?${stringifiedParams}`
+    : `/api/execution-logs`;
+};
+
+export const listAllExecutionLogs = async (
+  params?: ListAllExecutionLogsParams,
+  options?: RequestInit,
+): Promise<ExecutionLogExtended[]> => {
+  return customFetch<ExecutionLogExtended[]>(
+    getListAllExecutionLogsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAllExecutionLogsQueryKey = (
+  params?: ListAllExecutionLogsParams,
+) => {
+  return [`/api/execution-logs`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAllExecutionLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAllExecutionLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAllExecutionLogsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAllExecutionLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAllExecutionLogsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAllExecutionLogs>>
+  > = ({ signal }) =>
+    listAllExecutionLogs(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAllExecutionLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAllExecutionLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAllExecutionLogs>>
+>;
+export type ListAllExecutionLogsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all execution logs with optional filters
+ */
+
+export function useListAllExecutionLogs<
+  TData = Awaited<ReturnType<typeof listAllExecutionLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAllExecutionLogsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAllExecutionLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAllExecutionLogsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all database connections
+ */
+export const getListDatabaseConnectionsUrl = () => {
+  return `/api/database-connections`;
+};
+
+export const listDatabaseConnections = async (
+  options?: RequestInit,
+): Promise<DatabaseConnection[]> => {
+  return customFetch<DatabaseConnection[]>(getListDatabaseConnectionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDatabaseConnectionsQueryKey = () => {
+  return [`/api/database-connections`] as const;
+};
+
+export const getListDatabaseConnectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDatabaseConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDatabaseConnections>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListDatabaseConnectionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDatabaseConnections>>
+  > = ({ signal }) => listDatabaseConnections({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDatabaseConnections>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDatabaseConnectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDatabaseConnections>>
+>;
+export type ListDatabaseConnectionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all database connections
+ */
+
+export function useListDatabaseConnections<
+  TData = Awaited<ReturnType<typeof listDatabaseConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDatabaseConnections>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDatabaseConnectionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new database connection
+ */
+export const getCreateDatabaseConnectionUrl = () => {
+  return `/api/database-connections`;
+};
+
+export const createDatabaseConnection = async (
+  createDatabaseConnectionBody: CreateDatabaseConnectionBody,
+  options?: RequestInit,
+): Promise<DatabaseConnection> => {
+  return customFetch<DatabaseConnection>(getCreateDatabaseConnectionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createDatabaseConnectionBody),
+  });
+};
+
+export const getCreateDatabaseConnectionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDatabaseConnection>>,
+    TError,
+    { data: BodyType<CreateDatabaseConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDatabaseConnection>>,
+  TError,
+  { data: BodyType<CreateDatabaseConnectionBody> },
+  TContext
+> => {
+  const mutationKey = ["createDatabaseConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDatabaseConnection>>,
+    { data: BodyType<CreateDatabaseConnectionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDatabaseConnection(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDatabaseConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDatabaseConnection>>
+>;
+export type CreateDatabaseConnectionMutationBody =
+  BodyType<CreateDatabaseConnectionBody>;
+export type CreateDatabaseConnectionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new database connection
+ */
+export const useCreateDatabaseConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDatabaseConnection>>,
+    TError,
+    { data: BodyType<CreateDatabaseConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDatabaseConnection>>,
+  TError,
+  { data: BodyType<CreateDatabaseConnectionBody> },
+  TContext
+> => {
+  return useMutation(getCreateDatabaseConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Update a database connection
+ */
+export const getUpdateDatabaseConnectionUrl = (id: number) => {
+  return `/api/database-connections/${id}`;
+};
+
+export const updateDatabaseConnection = async (
+  id: number,
+  updateDatabaseConnectionBody: UpdateDatabaseConnectionBody,
+  options?: RequestInit,
+): Promise<DatabaseConnection> => {
+  return customFetch<DatabaseConnection>(getUpdateDatabaseConnectionUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateDatabaseConnectionBody),
+  });
+};
+
+export const getUpdateDatabaseConnectionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDatabaseConnection>>,
+    TError,
+    { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDatabaseConnection>>,
+  TError,
+  { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
+  TContext
+> => {
+  const mutationKey = ["updateDatabaseConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDatabaseConnection>>,
+    { id: number; data: BodyType<UpdateDatabaseConnectionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDatabaseConnection(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDatabaseConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDatabaseConnection>>
+>;
+export type UpdateDatabaseConnectionMutationBody =
+  BodyType<UpdateDatabaseConnectionBody>;
+export type UpdateDatabaseConnectionMutationError = ErrorType<void>;
+
+/**
+ * @summary Update a database connection
+ */
+export const useUpdateDatabaseConnection = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDatabaseConnection>>,
+    TError,
+    { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDatabaseConnection>>,
+  TError,
+  { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
+  TContext
+> => {
+  return useMutation(getUpdateDatabaseConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Delete a database connection
+ */
+export const getDeleteDatabaseConnectionUrl = (id: number) => {
+  return `/api/database-connections/${id}`;
+};
+
+export const deleteDatabaseConnection = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDatabaseConnectionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDatabaseConnectionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDatabaseConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDatabaseConnection(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDatabaseConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDatabaseConnection>>
+>;
+
+export type DeleteDatabaseConnectionMutationError = ErrorType<void>;
+
+/**
+ * @summary Delete a database connection
+ */
+export const useDeleteDatabaseConnection = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDatabaseConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteDatabaseConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Test a database connection
+ */
+export const getTestDatabaseConnectionUrl = (id: number) => {
+  return `/api/database-connections/${id}/test`;
+};
+
+export const testDatabaseConnection = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DatabaseConnectionTestResult> => {
+  return customFetch<DatabaseConnectionTestResult>(
+    getTestDatabaseConnectionUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getTestDatabaseConnectionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testDatabaseConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof testDatabaseConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["testDatabaseConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof testDatabaseConnection>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return testDatabaseConnection(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TestDatabaseConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof testDatabaseConnection>>
+>;
+
+export type TestDatabaseConnectionMutationError = ErrorType<void>;
+
+/**
+ * @summary Test a database connection
+ */
+export const useTestDatabaseConnection = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testDatabaseConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testDatabaseConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getTestDatabaseConnectionMutationOptions(options));
+};
 
 /**
  * @summary List attachments, optionally filtered by conversation
@@ -2609,250 +3517,3 @@ export const useDeleteAttachment = <
 > => {
   return useMutation(getDeleteAttachmentMutationOptions(options));
 };
-
-export const getListDatabaseConnectionsUrl = () => `/api/database-connections`;
-
-export const listDatabaseConnections = async (
-  options?: RequestInit,
-): Promise<DatabaseConnection[]> => {
-  return customFetch<DatabaseConnection[]>(getListDatabaseConnectionsUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getListDatabaseConnectionsQueryKey = () =>
-  [`/api/database-connections`] as const;
-
-export const getListDatabaseConnectionsQueryOptions = <
-  TData = Awaited<ReturnType<typeof listDatabaseConnections>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof listDatabaseConnections>>, TError, TData>;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryOptions<Awaited<ReturnType<typeof listDatabaseConnections>>, TError, TData> => {
-  const { query: queryOptions } = options ?? {};
-  return {
-    queryKey: getListDatabaseConnectionsQueryKey(),
-    queryFn: () => listDatabaseConnections(),
-    ...queryOptions,
-  };
-};
-
-export function useListDatabaseConnections<
-  TData = Awaited<ReturnType<typeof listDatabaseConnections>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof listDatabaseConnections>>, TError, TData>;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListDatabaseConnectionsQueryOptions(options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-  query.queryKey = queryOptions.queryKey;
-  return query;
-}
-
-export const getCreateDatabaseConnectionUrl = () => `/api/database-connections`;
-
-export const createDatabaseConnection = async (
-  data: BodyType<CreateDatabaseConnectionBody>,
-  options?: RequestInit,
-): Promise<DatabaseConnection> => {
-  return customFetch<DatabaseConnection>(getCreateDatabaseConnectionUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(data),
-  });
-};
-
-export const useCreateDatabaseConnection = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createDatabaseConnection>>,
-    TError,
-    { data: BodyType<CreateDatabaseConnectionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof createDatabaseConnection>>,
-  TError,
-  { data: BodyType<CreateDatabaseConnectionBody> },
-  TContext
-> => {
-  const mutationFn = (props: { data: BodyType<CreateDatabaseConnectionBody> }) =>
-    createDatabaseConnection(props.data);
-  return useMutation({ mutationFn, ...options?.mutation });
-};
-
-export const getUpdateDatabaseConnectionUrl = (id: number) =>
-  `/api/database-connections/${id}`;
-
-export const updateDatabaseConnection = async (
-  id: number,
-  data: BodyType<UpdateDatabaseConnectionBody>,
-  options?: RequestInit,
-): Promise<DatabaseConnection> => {
-  return customFetch<DatabaseConnection>(getUpdateDatabaseConnectionUrl(id), {
-    ...options,
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(data),
-  });
-};
-
-export const useUpdateDatabaseConnection = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateDatabaseConnection>>,
-    TError,
-    { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof updateDatabaseConnection>>,
-  TError,
-  { id: number; data: BodyType<UpdateDatabaseConnectionBody> },
-  TContext
-> => {
-  const mutationFn = (props: { id: number; data: BodyType<UpdateDatabaseConnectionBody> }) =>
-    updateDatabaseConnection(props.id, props.data);
-  return useMutation({ mutationFn, ...options?.mutation });
-};
-
-export const getDeleteDatabaseConnectionUrl = (id: number) =>
-  `/api/database-connections/${id}`;
-
-export const deleteDatabaseConnection = async (
-  id: number,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteDatabaseConnectionUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const useDeleteDatabaseConnection = <
-  TError = ErrorType<void>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteDatabaseConnection>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteDatabaseConnection>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationFn = (props: { id: number }) => deleteDatabaseConnection(props.id);
-  return useMutation({ mutationFn, ...options?.mutation });
-};
-
-export const getTestDatabaseConnectionUrl = (id: number) =>
-  `/api/database-connections/${id}/test`;
-
-export const testDatabaseConnection = async (
-  id: number,
-  options?: RequestInit,
-): Promise<DatabaseConnectionTestResult> => {
-  return customFetch<DatabaseConnectionTestResult>(getTestDatabaseConnectionUrl(id), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const useTestDatabaseConnection = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof testDatabaseConnection>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof testDatabaseConnection>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationFn = (props: { id: number }) => testDatabaseConnection(props.id);
-  return useMutation({ mutationFn, ...options?.mutation });
-};
-
-export const getAllExecutionLogsUrl = (params?: ListExecutionLogsParams) => {
-  const query = new URLSearchParams();
-  if (params?.level) query.set("level", params.level);
-  if (params?.eventType) query.set("eventType", params.eventType);
-  if (params?.serverId != null) query.set("serverId", String(params.serverId));
-  if (params?.after) query.set("after", params.after);
-  if (params?.before) query.set("before", params.before);
-  if (params?.limit != null) query.set("limit", String(params.limit));
-  const qs = query.toString();
-  return `/api/execution-logs${qs ? `?${qs}` : ""}`;
-};
-
-export const listAllExecutionLogs = async (
-  params?: ListExecutionLogsParams,
-  options?: RequestInit,
-): Promise<ExecutionLogExtended[]> => {
-  return customFetch<ExecutionLogExtended[]>(getAllExecutionLogsUrl(params), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getListAllExecutionLogsQueryKey = (params?: ListExecutionLogsParams) =>
-  [`/api/execution-logs`, params] as const;
-
-export const getListAllExecutionLogsQueryOptions = <
-  TData = Awaited<ReturnType<typeof listAllExecutionLogs>>,
-  TError = ErrorType<unknown>,
->(
-  params?: ListExecutionLogsParams,
-  options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof listAllExecutionLogs>>, TError, TData>;
-    request?: SecondParameter<typeof customFetch>;
-  }
-): UseQueryOptions<Awaited<ReturnType<typeof listAllExecutionLogs>>, TError, TData> => {
-  const { query: queryOptions } = options ?? {};
-  return {
-    queryKey: getListAllExecutionLogsQueryKey(params),
-    queryFn: () => listAllExecutionLogs(params),
-    ...queryOptions,
-  };
-};
-
-export function useListAllExecutionLogs<
-  TData = Awaited<ReturnType<typeof listAllExecutionLogs>>,
-  TError = ErrorType<unknown>,
->(
-  params?: ListExecutionLogsParams,
-  options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof listAllExecutionLogs>>, TError, TData>;
-    request?: SecondParameter<typeof customFetch>;
-  }
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListAllExecutionLogsQueryOptions(params, options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-  query.queryKey = queryOptions.queryKey;
-  return query;
-}

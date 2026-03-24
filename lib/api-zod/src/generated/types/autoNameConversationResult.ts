@@ -6,6 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AnthropicError {
-  error: string;
+export interface AutoNameConversationResult {
+  title: string;
 }

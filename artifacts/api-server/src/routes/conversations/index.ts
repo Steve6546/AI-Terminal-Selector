@@ -3,9 +3,9 @@ import { db } from "@workspace/db";
 import { conversations, messages, executions, mcpTools, mcpServers, attachments } from "@workspace/db";
 import { eq, desc, count, and, inArray, gte } from "drizzle-orm";
 import {
-  CreateAnthropicConversationBody,
-  UpdateAnthropicConversationBody,
-  SendAnthropicMessageBody,
+  CreateConversationBody,
+  UpdateConversationBody,
+  SendMessageBody,
 } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { executeMcpTool } from "../../lib/mcp-gateway";
@@ -15,11 +15,7 @@ import { checkEndpointAllowed } from "../../lib/domain-allowlist";
 
 const router: IRouter = Router();
 
-// ─── Pending approvals ─────────────────────────────────────────────────────
-// Map<"runId:toolId" → resolve(approved)>
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
-
-// ─── Typed SSE event shapes ────────────────────────────────────────────────
 
 type RunEvent =
   | { type: "run.created"; run_id: string; conversation_id: number; model: string; mode: string }
@@ -36,7 +32,6 @@ type RunEvent =
   | { type: "run.completed"; run_id: string }
   | { type: "run.failed"; run_id: string; error: string };
 
-// ─── Agent system prompt ────────────────────────────────────────────────────
 const AGENT_SYSTEM_PROMPT = `You are an expert AI agent with access to MCP (Model Context Protocol) tools and servers.
 
 ## Your capabilities
@@ -60,8 +55,6 @@ const AGENT_SYSTEM_PROMPT = `You are an expert AI agent with access to MCP (Mode
 - Never fabricate tool results. If a tool returns nothing useful, say so.
 - Always provide a clear final summary of what was accomplished and any follow-up suggestions.
 - Keep your reasoning transparent — briefly explain why you are choosing each tool.`;
-
-// ─── Conversation CRUD ─────────────────────────────────────────────────────
 
 router.get("/conversations", async (req, res) => {
   try {
@@ -106,7 +99,7 @@ router.get("/conversations", async (req, res) => {
 
 router.post("/conversations", async (req, res) => {
   try {
-    const body = CreateAnthropicConversationBody.parse(req.body);
+    const body = CreateConversationBody.parse(req.body);
     const [conv] = await db
       .insert(conversations)
       .values({ title: body.title, model: body.model ?? "claude-sonnet-4-6" })
@@ -158,7 +151,7 @@ router.delete("/conversations/:id", async (req, res) => {
 router.patch("/conversations/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const body = UpdateAnthropicConversationBody.parse(req.body);
+    const body = UpdateConversationBody.parse(req.body);
     const updateData: Partial<typeof conversations.$inferInsert> = { updatedAt: new Date() };
     if (body.title !== undefined) updateData.title = body.title;
     if (body.model !== undefined) updateData.model = body.model;
@@ -190,9 +183,7 @@ router.get("/conversations/:id/messages", async (req, res) => {
   }
 });
 
-// ─── Build Anthropic tool definitions from enabled MCP tools ──────────────
-
-async function buildAnthropicTools(serverIds?: number[]) {
+async function buildToolDefinitions(serverIds?: number[]) {
   const baseConditions = and(
     eq(mcpTools.enabled, true),
     eq(mcpServers.enabled, true),
@@ -219,8 +210,6 @@ async function buildAnthropicTools(serverIds?: number[]) {
   }));
 }
 
-// ─── Approval endpoint ─────────────────────────────────────────────────────
-
 router.post("/conversations/:id/runs/:runId/approve", (req, res) => {
   const { runId } = req.params;
   const { tool_id, approved } = req.body as { tool_id: string; approved: boolean };
@@ -235,12 +224,10 @@ router.post("/conversations/:id/runs/:runId/approve", (req, res) => {
   }
 });
 
-// ─── POST conversations/:id/messages — main streaming endpoint ────────────
-
 router.post("/conversations/:id/messages", async (req, res) => {
   try {
     const convId = parseInt(req.params.id);
-    const body = SendAnthropicMessageBody.parse(req.body);
+    const body = SendMessageBody.parse(req.body);
 
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, convId));
     if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
@@ -286,7 +273,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
       return { role: m.role as "user" | "assistant", content: m.content };
     });
 
-    // SSE setup
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -298,10 +284,8 @@ router.post("/conversations/:id/messages", async (req, res) => {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
 
-    // Emit run created
     sendEvent({ type: "run.created", run_id: runId, conversation_id: convId, model, mode });
 
-    // ── In-session summarization ─────────────────────────────────────────
     const SUMMARY_THRESHOLD = 20;
     const RECENT_MESSAGES_TO_KEEP = 8;
 
@@ -344,8 +328,8 @@ router.post("/conversations/:id/messages", async (req, res) => {
     if (mode === "agent") {
       sendEvent({ type: "model.started", run_id: runId });
 
-      const mcpToolDefs = await buildAnthropicTools();
-      const anthropicTools = mcpToolDefs.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
+      const mcpToolDefs = await buildToolDefinitions();
+      const providerTools = mcpToolDefs.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
 
       type ToolUseBlock = { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
       type ToolResultBlock = { type: "tool_result"; tool_use_id: string; content: string };
@@ -356,22 +340,20 @@ router.post("/conversations/:id/messages", async (req, res) => {
       let loopCount = 0;
       const MAX_LOOPS = 10;
 
-      // Fetch connected servers for planning context
       const connectedServers = await db
         .select({ id: mcpServers.id, name: mcpServers.name })
         .from(mcpServers)
         .where(eq(mcpServers.enabled, true));
 
-      // Emit structured planning thinking
       sendEvent({ type: "thinking.started", run_id: runId, message: "Planning..." });
       if (connectedServers.length > 0) {
         sendEvent({ type: "thinking.delta", run_id: runId, content: `Connected servers: ${connectedServers.map(s => s.name).join(", ")}` });
       } else {
         sendEvent({ type: "thinking.delta", run_id: runId, content: "No MCP servers connected — will respond from knowledge only" });
       }
-      if (anthropicTools.length > 0) {
-        const toolNames = anthropicTools.slice(0, 8).map(t => t.name.split("__")[1] ?? t.name);
-        const extra = anthropicTools.length > 8 ? ` +${anthropicTools.length - 8} more` : "";
+      if (providerTools.length > 0) {
+        const toolNames = providerTools.slice(0, 8).map(t => t.name.split("__")[1] ?? t.name);
+        const extra = providerTools.length > 8 ? ` +${providerTools.length - 8} more` : "";
         sendEvent({ type: "thinking.delta", run_id: runId, content: `Available tools: ${toolNames.join(", ")}${extra}` });
       }
 
@@ -388,8 +370,8 @@ router.post("/conversations/:id/messages", async (req, res) => {
           system: AGENT_SYSTEM_PROMPT,
           messages: loopMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
         };
-        if (anthropicTools.length > 0) {
-          (requestParams as Record<string, unknown>).tools = anthropicTools;
+        if (providerTools.length > 0) {
+          (requestParams as Record<string, unknown>).tools = providerTools;
         }
 
         const stream = anthropic.messages.stream(requestParams);
@@ -428,7 +410,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
           sendEvent({ type: "thinking.completed", run_id: runId });
         }
 
-        // Parse tool inputs
         for (const block of toolUseBlocks) {
           if (block._rawInput) {
             try { block.input = JSON.parse(block._rawInput) as Record<string, unknown>; } catch { block.input = {}; }
@@ -454,10 +435,8 @@ router.post("/conversations/:id/messages", async (req, res) => {
             servConfig = srv ?? null;
           }
 
-          // Emit thinking delta for tool selection
           sendEvent({ type: "thinking.delta", run_id: runId, content: `Selecting tool: ${rawToolName} on ${servConfig?.name ?? "unknown server"}` });
 
-          // Enforce requiresApproval
           let toolRecord: typeof mcpTools.$inferSelect | null = null;
           if (serverId) {
             const [t] = await db.select().from(mcpTools).where(and(eq(mcpTools.serverId, serverId), eq(mcpTools.toolName, rawToolName)));
@@ -465,13 +444,11 @@ router.post("/conversations/:id/messages", async (req, res) => {
           }
 
           if (toolRecord?.requiresApproval) {
-            // Emit approval required and wait
             sendEvent({ type: "tool.approval_required", run_id: runId, tool_id: block.id, tool_name: rawToolName, server_name: servConfig?.name ?? null, inputs: block.input });
 
             const approvalKey = `${runId}:${block.id}`;
             const approved = await new Promise<boolean>((resolve) => {
               pendingApprovals.set(approvalKey, resolve);
-              // Auto-reject after 5 minutes
               setTimeout(() => {
                 if (pendingApprovals.has(approvalKey)) {
                   pendingApprovals.delete(approvalKey);
@@ -493,7 +470,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
             }
           }
 
-          // Emit tool started
           sendEvent({ type: "tool.started", run_id: runId, tool_id: block.id, tool_name: rawToolName, server_id: serverId, server_name: servConfig?.name ?? null, inputs: block.input });
 
           const [execRow] = await db.insert(executions).values({
@@ -527,12 +503,10 @@ router.post("/conversations/:id/messages", async (req, res) => {
             ? JSON.stringify(execResult.content ?? "")
             : `Error: ${execResult.error ?? "Unknown error"}`;
 
-          // Emit stdout with the result
           if (execResult.success && execResult.content) {
             const contentStr = typeof execResult.content === "string" ? execResult.content : JSON.stringify(execResult.content, null, 2);
             sendEvent({ type: "tool.stdout", run_id: runId, tool_id: block.id, content: contentStr.slice(0, 8192) });
 
-            // Emit artifact.created for large structured results
             const sizeBytes = Buffer.byteLength(contentStr, "utf-8");
             if (sizeBytes > 512) {
               const isJson = typeof execResult.content !== "string";
@@ -579,7 +553,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
       }
 
     } else if (mode === "tool") {
-      // Tool mode: user explicitly selected a server + tool; execute directly
       sendEvent({ type: "model.started", run_id: runId });
 
       const selectedServerId = typeof rawBody.selectedServerId === "number" ? rawBody.selectedServerId : null;
@@ -693,7 +666,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
       sendEvent({ type: "text.delta", run_id: runId, content: fullResponse });
 
     } else {
-      // Chat mode: plain streaming, no tools
       sendEvent({ type: "model.started", run_id: runId });
 
       const stream = anthropic.messages.stream({
@@ -727,8 +699,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
   }
 });
 
-// ─── DELETE messages-from ─────────────────────────────────────────────────
-
 router.delete("/conversations/:id/messages-from/:messageId", async (req, res) => {
   try {
     const convId = parseInt(req.params.id);
@@ -749,8 +719,6 @@ router.delete("/conversations/:id/messages-from/:messageId", async (req, res) =>
     handleRouteError(res, err, "Internal server error");
   }
 });
-
-// ─── POST /conversations/:id/auto-name ────────────────────────────────────
 
 const DEFAULT_TITLES = new Set(["New Chat", "New Conversation"]);
 
@@ -790,8 +758,6 @@ router.post("/conversations/:id/auto-name", async (req, res) => {
     handleRouteError(res, err, "Internal server error");
   }
 });
-
-// ─── Conversation management endpoints ────────────────────────────────────
 
 router.post("/conversations/:id/pin", async (req, res) => {
   try {

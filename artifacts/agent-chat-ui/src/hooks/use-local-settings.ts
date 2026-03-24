@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { SettingsMapDefaultModel } from "@workspace/api-client-react";
 
 const MODEL_KEY = "agent_chat_selected_model";
 const MODE_KEY = "agent_chat_mode";
 
-export const AVAILABLE_MODELS: { id: SettingsMapDefaultModel; label: string }[] = [
+export type ModelId = "claude-sonnet-4-6" | "claude-opus-4-6";
+
+export const AVAILABLE_MODELS: { id: ModelId; label: string }[] = [
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
   { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
 ];
@@ -12,10 +13,10 @@ export const AVAILABLE_MODELS: { id: SettingsMapDefaultModel; label: string }[] 
 export type InteractionMode = "agent" | "tool";
 
 export function useLocalSettings() {
-  const [model, setModel] = useState<SettingsMapDefaultModel>(() => {
+  const [model, setModel] = useState<ModelId>(() => {
     const saved = localStorage.getItem(MODEL_KEY);
     if (saved === "claude-opus-4-6" || saved === "claude-sonnet-4-6") {
-      return saved as SettingsMapDefaultModel;
+      return saved as ModelId;
     }
     return "claude-sonnet-4-6";
   });

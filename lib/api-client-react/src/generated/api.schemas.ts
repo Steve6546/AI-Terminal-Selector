@@ -9,7 +9,7 @@ export interface HealthStatus {
   status: string;
 }
 
-export interface AnthropicConversation {
+export interface Conversation {
   id: number;
   title: string;
   model: string;
@@ -32,13 +32,13 @@ export interface DuplicateConversationResult {
   id: number;
   title: string;
   model: string;
-  pinnedAt: string | null;
+  pinnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
 }
 
-export interface AnthropicMessage {
+export interface ChatMessage {
   id: number;
   conversationId: number;
   role: string;
@@ -47,55 +47,31 @@ export interface AnthropicMessage {
   createdAt: string;
 }
 
-export type CreateAnthropicConversationBodyModel =
-  (typeof CreateAnthropicConversationBodyModel)[keyof typeof CreateAnthropicConversationBodyModel];
-
-export const CreateAnthropicConversationBodyModel = {
-  "claude-sonnet-4-6": "claude-sonnet-4-6",
-  "claude-opus-4-6": "claude-opus-4-6",
-} as const;
-
-export interface CreateAnthropicConversationBody {
+export interface CreateConversationBody {
   title: string;
-  model?: CreateAnthropicConversationBodyModel;
+  model?: string;
 }
 
-export type UpdateAnthropicConversationBodyModel =
-  (typeof UpdateAnthropicConversationBodyModel)[keyof typeof UpdateAnthropicConversationBodyModel];
-
-export const UpdateAnthropicConversationBodyModel = {
-  "claude-sonnet-4-6": "claude-sonnet-4-6",
-  "claude-opus-4-6": "claude-opus-4-6",
-} as const;
-
-export interface UpdateAnthropicConversationBody {
+export interface UpdateConversationBody {
   title?: string;
-  model?: UpdateAnthropicConversationBodyModel;
+  model?: string;
 }
 
-export type SendAnthropicMessageBodyModel =
-  (typeof SendAnthropicMessageBodyModel)[keyof typeof SendAnthropicMessageBodyModel];
-
-export const SendAnthropicMessageBodyModel = {
-  "claude-sonnet-4-6": "claude-sonnet-4-6",
-  "claude-opus-4-6": "claude-opus-4-6",
-} as const;
-
-export interface SendAnthropicMessageBody {
+export interface SendMessageBody {
   content: string;
-  model?: SendAnthropicMessageBodyModel;
+  model?: string;
 }
 
-export interface AnthropicConversationWithMessages {
+export interface ConversationWithMessages {
   id: number;
   title: string;
   model: string;
   createdAt: string;
   updatedAt: string;
-  messages: AnthropicMessage[];
+  messages: ChatMessage[];
 }
 
-export interface AnthropicError {
+export interface ApiError {
   error: string;
 }
 
@@ -265,6 +241,8 @@ export const ExecutionStatus = {
   error: "error",
 } as const;
 
+export type ExecutionArguments = { [key: string]: unknown };
+
 export interface Execution {
   id: number;
   conversationId?: number;
@@ -272,21 +250,13 @@ export interface Execution {
   serverName?: string;
   toolName: string;
   status: ExecutionStatus;
-  arguments?: Record<string, unknown>;
   startedAt: string;
   completedAt?: string;
   durationMs?: number;
   resultSummary?: string;
-  rawResult?: unknown;
+  arguments?: ExecutionArguments;
+  rawResult?: string;
 }
-
-export type SettingsMapDefaultModel =
-  (typeof SettingsMapDefaultModel)[keyof typeof SettingsMapDefaultModel];
-
-export const SettingsMapDefaultModel = {
-  "claude-sonnet-4-6": "claude-sonnet-4-6",
-  "claude-opus-4-6": "claude-opus-4-6",
-} as const;
 
 export type SettingsMapTheme =
   (typeof SettingsMapTheme)[keyof typeof SettingsMapTheme];
@@ -299,7 +269,7 @@ export const SettingsMapTheme = {
 
 export interface SettingsMap {
   agentName?: string;
-  defaultModel?: SettingsMapDefaultModel;
+  defaultModel?: string;
   systemPrompt?: string;
   autoRun?: boolean;
   maxToolCalls?: number;
@@ -309,8 +279,6 @@ export interface SettingsMap {
   developerMode?: boolean;
   showTimeline?: boolean;
   showTechnicalDetails?: boolean;
-  compactMode?: boolean;
-  domainAllowlist?: string[];
 }
 
 export type SystemStatusAgentState =
@@ -356,42 +324,18 @@ export interface Attachment {
   createdAt: string;
 }
 
-export interface CreateAttachmentBody {
-  conversationId?: number;
-  fileName: string;
-  fileType: string;
-  content?: string;
-}
-
-export type ListExecutionsParams = {
-  conversationId?: number;
-  limit?: number;
-};
-
-export type ListAttachmentsParams = {
-  conversationId?: number;
-};
-
 export interface ExecutionLogExtended {
   id: number;
   executionId: number;
   level: string;
-  eventType: string;
+  eventType?: string;
   message: string;
   createdAt: string;
   toolName?: string | null;
   executionStatus?: string | null;
+  serverId?: number | null;
   serverName?: string | null;
 }
-
-export type ListExecutionLogsParams = {
-  level?: string;
-  eventType?: string;
-  serverId?: number;
-  after?: string;
-  before?: string;
-  limit?: number;
-};
 
 export type DatabaseConnectionType =
   (typeof DatabaseConnectionType)[keyof typeof DatabaseConnectionType];
@@ -399,7 +343,6 @@ export type DatabaseConnectionType =
 export const DatabaseConnectionType = {
   postgresql: "postgresql",
   mysql: "mysql",
-  sqlite: "sqlite",
 } as const;
 
 export type DatabaseConnectionStatus =
@@ -414,21 +357,28 @@ export const DatabaseConnectionStatus = {
 export interface DatabaseConnection {
   id: number;
   name: string;
-  type: string;
-  host?: string | null;
-  port?: number | null;
-  username?: string | null;
+  type: DatabaseConnectionType;
+  host?: string;
+  port?: number;
+  username?: string;
   database: string;
-  ssl: boolean;
-  status: string;
+  ssl?: boolean;
+  status: DatabaseConnectionStatus;
   lastTestedAt?: string | null;
   createdAt: string;
-  updatedAt: string;
 }
+
+export type CreateDatabaseConnectionBodyType =
+  (typeof CreateDatabaseConnectionBodyType)[keyof typeof CreateDatabaseConnectionBodyType];
+
+export const CreateDatabaseConnectionBodyType = {
+  postgresql: "postgresql",
+  mysql: "mysql",
+} as const;
 
 export interface CreateDatabaseConnectionBody {
   name: string;
-  type?: string;
+  type: CreateDatabaseConnectionBodyType;
   host?: string;
   port?: number;
   username?: string;
@@ -437,9 +387,17 @@ export interface CreateDatabaseConnectionBody {
   ssl?: boolean;
 }
 
+export type UpdateDatabaseConnectionBodyType =
+  (typeof UpdateDatabaseConnectionBodyType)[keyof typeof UpdateDatabaseConnectionBodyType];
+
+export const UpdateDatabaseConnectionBodyType = {
+  postgresql: "postgresql",
+  mysql: "mysql",
+} as const;
+
 export interface UpdateDatabaseConnectionBody {
   name?: string;
-  type?: string;
+  type?: UpdateDatabaseConnectionBodyType;
   host?: string;
   port?: number;
   username?: string;
@@ -451,5 +409,68 @@ export interface UpdateDatabaseConnectionBody {
 export interface DatabaseConnectionTestResult {
   success: boolean;
   message: string;
-  latencyMs?: number;
+  latencyMs?: number | null;
 }
+
+export interface CreateAttachmentBody {
+  conversationId?: number;
+  fileName: string;
+  fileType: string;
+  content?: string;
+}
+
+export type AutoNameConversationParams = {
+  /**
+   * When true, renames even if the title was manually set. When false (default), only renames if the title is still a default placeholder.
+   */
+  force?: boolean;
+};
+
+export type ExportConversationParams = {
+  format?: ExportConversationFormat;
+};
+
+export type ExportConversationFormat =
+  (typeof ExportConversationFormat)[keyof typeof ExportConversationFormat];
+
+export const ExportConversationFormat = {
+  json: "json",
+  markdown: "markdown",
+} as const;
+
+export type ListExecutionsParams = {
+  conversationId?: number;
+  limit?: number;
+};
+
+export type ListAllExecutionLogsParams = {
+  /**
+   * Comma-separated log levels (info,warn,error,debug)
+   */
+  level?: string;
+  /**
+   * Comma-separated event types
+   */
+  eventType?: string;
+  /**
+   * Filter by MCP server ID
+   */
+  serverId?: number;
+  /**
+   * Return logs after this timestamp
+   */
+  after?: string;
+  /**
+   * Return logs before this timestamp
+   */
+  before?: string;
+  /**
+   * Maximum number of results to return
+   * @maximum 500
+   */
+  limit?: number;
+};
+
+export type ListAttachmentsParams = {
+  conversationId?: number;
+};
