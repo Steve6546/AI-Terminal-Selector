@@ -18,7 +18,7 @@ router.use(healthRouter);
 router.use(conversationsRouter);
 
 router.use("/anthropic/*path", (req, res) => {
-  const newPath = `/api/conversations/${req.params.path}`;
+  const newPath = `/api/${req.params.path}`;
   res.redirect(308, newPath);
 });
 router.use(mcpRouter);
