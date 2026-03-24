@@ -54,7 +54,10 @@ class AgentRuntime:
         emit: Callable[[RunEvent], None],
     ) -> str:
         run_id = str(uuid.uuid4())
-        mode = AgentMode(request.mode) if request.mode in AgentMode.__members__.values() else AgentMode.AGENT
+        try:
+            mode = AgentMode(request.mode) if request.mode else AgentMode.AGENT
+        except ValueError:
+            mode = AgentMode.AGENT
         model = request.model or settings.default_model
 
         emit(RunEvent(
