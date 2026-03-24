@@ -18,12 +18,11 @@ import { useStickyScroll } from "@/hooks/use-sticky-scroll";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
 import { ChatInput, type ToolParams } from "@/components/chat/chat-input";
-import { MessageBubble } from "@/components/chat/message-bubble";
-import { ToolExecutionCard } from "@/components/chat/tool-execution-card";
 import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { LiveToolCard } from "@/components/chat/live-tool-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { StreamingBubble } from "@/components/chat/streaming-bubble";
+import { VirtualizedTimeline, type TimelineItem } from "@/components/chat/virtualized-timeline";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
@@ -168,14 +167,10 @@ export default function ChatPage() {
     messages, executions, streamedText, liveTools, isThinking,
   ]);
 
-  const timelineItems = useMemo(() => {
+  const timelineItems: TimelineItem[] = useMemo(() => {
     if (!messages && !executions) return [];
 
-    type TimelineItem =
-      | { type: "msg"; data: ChatMessage; time: number }
-      | { type: "exec"; data: Execution; time: number };
     const items: TimelineItem[] = [];
-
     messages?.forEach((m) => items.push({ type: "msg", data: m, time: new Date(m.createdAt).getTime() }));
     executions?.forEach((e) => items.push({ type: "exec", data: e, time: new Date(e.startedAt).getTime() }));
 
@@ -325,27 +320,14 @@ export default function ChatPage() {
                   </p>
                 </div>
               ) : (
-                <div className="flex flex-col w-full">
-                  {timelineItems.map((item, i) => (
-                    <motion.div
-                      key={`${item.type}-${item.data.id || i}`}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      {item.type === "msg"
-                        ? (
-                          <MessageBubble
-                            message={item.data}
-                            currentModel={model}
-                            onRetry={item.data.role === "assistant" ? handleRetry : undefined}
-                            onEditResend={item.data.role === "user" ? handleEditResend : undefined}
-                          />
-                        )
-                        : <ToolExecutionCard execution={item.data} />
-                      }
-                    </motion.div>
-                  ))}
+                <>
+                  <VirtualizedTimeline
+                    items={timelineItems}
+                    model={model}
+                    onRetry={handleRetry}
+                    onEditResend={handleEditResend}
+                    scrollRef={scrollRef}
+                  />
 
                   <AnimatePresence>
                     {isStreaming && (
@@ -397,7 +379,7 @@ export default function ChatPage() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </div>
+                </>
               )}
             </div>
           )}
