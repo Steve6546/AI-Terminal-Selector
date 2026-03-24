@@ -33,6 +33,26 @@ class McpDiscoveryResult(BaseModel):
     prompts: List[McpDiscoveredPrompt] = []
 
 
+class McpCapabilityResult(BaseModel):
+    name: str
+    available: bool
+    count: int = 0
+    error: Optional[str] = None
+    latency_ms: int = 0
+
+
+class McpDeepHealthResult(BaseModel):
+    status: str
+    latency_ms: int
+    message: str
+    capabilities: Dict[str, McpCapabilityResult] = {}
+    tool_count: int = 0
+    resource_count: int = 0
+    prompt_count: int = 0
+    auth_ok: bool = True
+    error: Optional[str] = None
+
+
 class McpExecuteResult(BaseModel):
     success: bool
     content: Optional[Any] = None

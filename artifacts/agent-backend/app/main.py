@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from .agent.approval_manager import resolve_approval
 from .agent.runtime import AgentRuntime
 from .config import settings
-from .mcp.gateway import discover_with_retry, execute_tool, test_with_retry
+from .mcp.gateway import deep_health_check, discover_with_retry, execute_tool, test_with_retry
 from .models.events import RunEvent
 from .models.requests import (
     ApprovalRequest,
@@ -20,7 +20,7 @@ from .models.requests import (
     McpExecuteRequest,
     McpServerConfig,
 )
-from .models.responses import McpDiscoveryResult, McpExecuteResult, McpTestResult
+from .models.responses import McpDeepHealthResult, McpDiscoveryResult, McpExecuteResult, McpTestResult
 from .providers.router import ProviderRouter
 from .services.task_manager import task_manager
 
@@ -141,6 +141,19 @@ async def gateway_discover(request: Request, config: McpServerConfig):
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.post("/gateway/deep-health", response_model=McpDeepHealthResult)
+async def gateway_deep_health(request: Request, config: McpServerConfig):
+    require_admin(request, config.authorization)
+    timeout_s = config.timeout or 30
+    if config.transport_type not in ("streamable-http", "stdio"):
+        raise HTTPException(status_code=400, detail=f"Unsupported transport_type: {config.transport_type}")
+    if config.transport_type == "streamable-http" and not config.endpoint:
+        raise HTTPException(status_code=400, detail="endpoint required for streamable-http transport")
+    if config.transport_type == "stdio" and not config.command:
+        raise HTTPException(status_code=400, detail="command required for stdio transport")
+    return await deep_health_check(config, timeout_s)
 
 
 @app.post("/agent/chat")

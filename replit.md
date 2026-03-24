@@ -22,7 +22,10 @@
 
 - Multi-conversation chat with Claude AI streaming (SSE)
 - Model selector: Claude Sonnet 4.6 / Claude Opus 4.6
-- MCP server management (add, test, discover tools)
+- MCP server management (add, test, discover tools, deep health checks)
+- **MCP Server Detail Page**: capabilities browser with tools/resources/prompts tabs, risk badges (low/medium/high based on tool names + approval status), approval toggle per tool, test connection + refresh tools buttons, live SSE status updates, info badges for last-checked/success/failure/latency
+- **Deep Health Checks**: Python `/gateway/deep-health` endpoint performs full MCP handshake → list capabilities → measure latency → detect degraded/auth_required states; Node.js health check job runs every 60s
+- **6-state server lifecycle**: checking, connected, degraded, auth_required, disconnected, error — persisted to DB with latencyMs, lastErrorMessage, lastSuccessAt, lastFailureAt columns
 - **AI Assistant sidebar** on MCP Servers page: slides in from the right, powered by gpt-5.2 via SSE streaming, understands natural language commands to create/edit/delete/toggle/test/clone servers, shows confirmation action cards, maintains conversation memory within session
 - Agent mode vs Tool mode in chat
 - Dark-mode UI with glowing accents, framer-motion animations

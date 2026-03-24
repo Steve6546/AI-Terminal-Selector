@@ -99,8 +99,28 @@ async function callGatewayOnce<T>(
   }
 }
 
+export interface McpCapabilityResult {
+  name: string;
+  available: boolean;
+  count: number;
+  error?: string;
+  latencyMs: number;
+}
+
+export interface McpDeepHealthResult {
+  status: string;
+  latencyMs: number;
+  message: string;
+  capabilities: Record<string, McpCapabilityResult>;
+  toolCount: number;
+  resourceCount: number;
+  promptCount: number;
+  authOk: boolean;
+  error?: string;
+}
+
 async function callGateway<T>(
-  path: "/gateway/test" | "/gateway/discover" | "/gateway/execute",
+  path: "/gateway/test" | "/gateway/discover" | "/gateway/execute" | "/gateway/deep-health",
   requestBody: unknown,
   retryCount: number,
   timeoutMs: number
@@ -164,6 +184,44 @@ export async function discoverMcpCapabilities(
       name: p.name,
       description: p.description,
     })),
+  };
+}
+
+export async function deepHealthCheck(config: McpServerConfig): Promise<McpDeepHealthResult> {
+  const timeoutMs = ((config.timeout ?? 30) + 15) * 1000;
+  const result = await callGateway<{
+    status: string;
+    latency_ms: number;
+    message: string;
+    capabilities: Record<string, { name: string; available: boolean; count: number; error?: string; latency_ms: number }>;
+    tool_count: number;
+    resource_count: number;
+    prompt_count: number;
+    auth_ok: boolean;
+    error?: string;
+  }>("/gateway/deep-health", buildServerBody(config), 0, timeoutMs);
+
+  const caps: Record<string, McpCapabilityResult> = {};
+  for (const [key, val] of Object.entries(result.capabilities)) {
+    caps[key] = {
+      name: val.name,
+      available: val.available,
+      count: val.count,
+      error: val.error,
+      latencyMs: val.latency_ms,
+    };
+  }
+
+  return {
+    status: result.status,
+    latencyMs: result.latency_ms,
+    message: result.message,
+    capabilities: caps,
+    toolCount: result.tool_count,
+    resourceCount: result.resource_count,
+    promptCount: result.prompt_count,
+    authOk: result.auth_ok,
+    error: result.error,
   };
 }
 

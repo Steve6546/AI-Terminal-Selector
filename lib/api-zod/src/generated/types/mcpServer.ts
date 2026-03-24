@@ -23,6 +23,10 @@ export interface McpServer {
   status: McpServerStatus;
   enabled: boolean;
   toolCount: number;
+  latencyMs?: number;
+  lastErrorMessage?: string;
+  lastSuccessAt?: Date;
+  lastFailureAt?: Date;
   lastCheckedAt?: Date;
   createdAt: Date;
 }

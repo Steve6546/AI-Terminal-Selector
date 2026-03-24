@@ -99,6 +99,8 @@ export const McpServerStatus = {
   connected: "connected",
   disconnected: "disconnected",
   checking: "checking",
+  degraded: "degraded",
+  auth_required: "auth_required",
   error: "error",
 } as const;
 
@@ -116,6 +118,10 @@ export interface McpServer {
   status: McpServerStatus;
   enabled: boolean;
   toolCount: number;
+  latencyMs?: number;
+  lastErrorMessage?: string;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
   lastCheckedAt?: string;
   createdAt: string;
 }

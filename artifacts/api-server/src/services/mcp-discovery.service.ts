@@ -1,9 +1,10 @@
 import { db } from "@workspace/db";
 import { mcpServers, mcpTools, mcpResources, mcpPrompts } from "@workspace/db";
 import { eq, count } from "drizzle-orm";
-import { testMcpConnection, discoverMcpCapabilities } from "../lib/mcp-gateway";
+import { testMcpConnection, discoverMcpCapabilities, deepHealthCheck, type McpDeepHealthResult } from "../lib/mcp-gateway";
 import { maskSecret, unmaskSecret } from "../lib/secret-utils";
 import { checkEndpointAllowed } from "../lib/domain-allowlist";
+import { serverStatusEmitter } from "../lib/server-status-emitter";
 
 function buildServerConfig(server: typeof mcpServers.$inferSelect) {
   return {
@@ -33,6 +34,10 @@ function formatServer(s: typeof mcpServers.$inferSelect, toolCount: number) {
     timeout: s.timeout,
     retryCount: s.retryCount,
     toolCount,
+    latencyMs: s.latencyMs,
+    lastErrorMessage: s.lastErrorMessage,
+    lastSuccessAt: s.lastSuccessAt?.toISOString(),
+    lastFailureAt: s.lastFailureAt?.toISOString(),
     lastCheckedAt: s.lastCheckedAt?.toISOString(),
     createdAt: s.createdAt.toISOString(),
   };
@@ -53,6 +58,10 @@ export async function listServers() {
       enabled: mcpServers.enabled,
       timeout: mcpServers.timeout,
       retryCount: mcpServers.retryCount,
+      latencyMs: mcpServers.latencyMs,
+      lastErrorMessage: mcpServers.lastErrorMessage,
+      lastSuccessAt: mcpServers.lastSuccessAt,
+      lastFailureAt: mcpServers.lastFailureAt,
       lastCheckedAt: mcpServers.lastCheckedAt,
       createdAt: mcpServers.createdAt,
       toolCount: count(mcpTools.id),
@@ -75,6 +84,10 @@ export async function listServers() {
     status: s.status,
     enabled: s.enabled,
     toolCount: Number(s.toolCount),
+    latencyMs: s.latencyMs,
+    lastErrorMessage: s.lastErrorMessage,
+    lastSuccessAt: s.lastSuccessAt?.toISOString(),
+    lastFailureAt: s.lastFailureAt?.toISOString(),
     lastCheckedAt: s.lastCheckedAt?.toISOString(),
     createdAt: s.createdAt.toISOString(),
   }));
@@ -192,29 +205,67 @@ export async function testServer(id: number) {
     return { error: allowCheck.reason ?? "Endpoint not allowed by domain allowlist" };
   }
 
-  await db.update(mcpServers).set({ status: "checking", lastCheckedAt: new Date() }).where(eq(mcpServers.id, id));
+  const now = new Date();
+  await db.update(mcpServers).set({ status: "checking", lastCheckedAt: now }).where(eq(mcpServers.id, id));
 
-  let result;
+  serverStatusEmitter.broadcast({
+    serverId: id, name: server.name, status: "checking",
+    lastCheckedAt: now.toISOString(),
+  });
+
+  let healthResult: McpDeepHealthResult;
   try {
-    result = await testMcpConnection(buildServerConfig(server));
+    healthResult = await deepHealthCheck(buildServerConfig(server));
   } catch (err) {
-    await db.update(mcpServers).set({ status: "error", lastCheckedAt: new Date() }).where(eq(mcpServers.id, id));
+    const failAt = new Date();
+    await db.update(mcpServers).set({
+      status: "error", lastCheckedAt: failAt, lastFailureAt: failAt,
+      lastErrorMessage: err instanceof Error ? err.message : String(err),
+    }).where(eq(mcpServers.id, id));
+
+    serverStatusEmitter.broadcast({
+      serverId: id, name: server.name, status: "error",
+      lastCheckedAt: failAt.toISOString(),
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   }
 
-  await db
-    .update(mcpServers)
-    .set({ status: result.success ? "connected" : "error", lastCheckedAt: new Date() })
-    .where(eq(mcpServers.id, id));
+  const checkedAt = new Date();
+  const updateData: Record<string, unknown> = {
+    status: healthResult.status,
+    lastCheckedAt: checkedAt,
+    latencyMs: healthResult.latencyMs,
+  };
+  if (healthResult.status === "connected") {
+    updateData.lastSuccessAt = checkedAt;
+    updateData.lastErrorMessage = null;
+  } else {
+    updateData.lastFailureAt = checkedAt;
+    if (healthResult.error) updateData.lastErrorMessage = healthResult.error;
+  }
+
+  await db.update(mcpServers).set(updateData).where(eq(mcpServers.id, id));
+
+  serverStatusEmitter.broadcast({
+    serverId: id, name: server.name,
+    status: healthResult.status as "connected" | "degraded" | "auth_required" | "disconnected" | "error",
+    lastCheckedAt: checkedAt.toISOString(),
+    latencyMs: healthResult.latencyMs,
+    errorMessage: healthResult.error,
+  });
 
   const toolCountResult = await db.select({ count: count() }).from(mcpTools).where(eq(mcpTools.serverId, id));
 
   return {
     result: {
-      success: result.success,
-      message: result.message,
+      success: healthResult.status === "connected",
+      message: healthResult.message,
+      status: healthResult.status,
       toolCount: Number(toolCountResult[0]?.count ?? 0),
-      latencyMs: result.latencyMs,
+      latencyMs: healthResult.latencyMs,
+      capabilities: healthResult.capabilities,
+      authOk: healthResult.authOk,
     },
   };
 }

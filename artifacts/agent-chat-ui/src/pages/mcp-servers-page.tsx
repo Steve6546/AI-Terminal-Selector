@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getListMcpServersQueryKey,
+  useListMcpTools,
 } from "@workspace/api-client-react";
 
 // ─── Zod schema for Add / Edit form ────────────────────────────────────────
@@ -531,6 +532,21 @@ function ServerFormDialog({
 
 // ─── Server card ───────────────────────────────────────────────────────────
 
+function ServerCardRiskSummary({ serverId }: { serverId: number }) {
+  const { data: tools } = useListMcpTools(serverId);
+  if (!tools || tools.length === 0) return null;
+
+  const approvalCount = tools.filter((t) => t.requiresApproval).length;
+  if (approvalCount === 0) return null;
+
+  return (
+    <span className="text-xs bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-lg px-2 py-0.5 flex items-center gap-1">
+      <Lock className="w-3 h-3" />
+      {approvalCount} need approval
+    </span>
+  );
+}
+
 function ServerCard({
   server,
   liveStatus,
@@ -593,6 +609,7 @@ function ServerCard({
           <Wrench className="w-3 h-3" />
           {server.toolCount ?? 0} tools
         </span>
+        <ServerCardRiskSummary serverId={server.id} />
         {!server.enabled && (
           <span className="text-xs bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-lg px-2 py-0.5">
             disabled

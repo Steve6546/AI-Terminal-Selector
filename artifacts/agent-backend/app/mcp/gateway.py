@@ -8,6 +8,8 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from ..models.requests import McpServerConfig
 from ..models.responses import (
+    McpCapabilityResult,
+    McpDeepHealthResult,
     McpDiscoveredPrompt,
     McpDiscoveredResource,
     McpDiscoveredTool,
@@ -153,6 +155,127 @@ async def _collect_capabilities(session: ClientSession) -> McpDiscoveryResult:
         pass
 
     return McpDiscoveryResult(tools=tools, resources=resources, prompts=prompts)
+
+
+async def _deep_health_session(session: ClientSession) -> McpDeepHealthResult:
+    capabilities = {}
+    tool_count = 0
+    resource_count = 0
+    prompt_count = 0
+    has_failure = False
+
+    t0 = time.monotonic()
+    try:
+        tools_resp = await session.list_tools()
+        tool_count = len(tools_resp.tools)
+        capabilities["tools"] = McpCapabilityResult(
+            name="tools", available=True, count=tool_count,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+    except Exception as exc:
+        has_failure = True
+        capabilities["tools"] = McpCapabilityResult(
+            name="tools", available=False, error=str(exc),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+
+    t1 = time.monotonic()
+    try:
+        resources_resp = await session.list_resources()
+        resource_count = len(resources_resp.resources)
+        capabilities["resources"] = McpCapabilityResult(
+            name="resources", available=True, count=resource_count,
+            latency_ms=int((time.monotonic() - t1) * 1000),
+        )
+    except Exception as exc:
+        has_failure = True
+        capabilities["resources"] = McpCapabilityResult(
+            name="resources", available=False, error=str(exc),
+            latency_ms=int((time.monotonic() - t1) * 1000),
+        )
+
+    t2 = time.monotonic()
+    try:
+        prompts_resp = await session.list_prompts()
+        prompt_count = len(prompts_resp.prompts)
+        capabilities["prompts"] = McpCapabilityResult(
+            name="prompts", available=True, count=prompt_count,
+            latency_ms=int((time.monotonic() - t2) * 1000),
+        )
+    except Exception as exc:
+        has_failure = True
+        capabilities["prompts"] = McpCapabilityResult(
+            name="prompts", available=False, error=str(exc),
+            latency_ms=int((time.monotonic() - t2) * 1000),
+        )
+
+    status = "degraded" if has_failure else "connected"
+    message = "All capabilities available" if not has_failure else "Some capabilities unavailable"
+
+    return McpDeepHealthResult(
+        status=status, latency_ms=0, message=message,
+        capabilities=capabilities,
+        tool_count=tool_count, resource_count=resource_count, prompt_count=prompt_count,
+    )
+
+
+async def _deep_health_http(config: McpServerConfig, timeout_s: int) -> McpDeepHealthResult:
+    headers = _build_http_headers(config)
+    start = time.monotonic()
+    async with streamablehttp_client(config.endpoint, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=timeout_s)
+            result = await _deep_health_session(session)
+            result.latency_ms = int((time.monotonic() - start) * 1000)
+            return result
+
+
+async def _deep_health_stdio(config: McpServerConfig, timeout_s: int) -> McpDeepHealthResult:
+    parts = (config.command or "").split()
+    if not parts:
+        return McpDeepHealthResult(
+            status="error", latency_ms=0, message="No command specified",
+            error="No command specified",
+        )
+    cmd, *cmd_args = parts
+    all_args = cmd_args + (config.args or [])
+    server_params = StdioServerParameters(command=cmd, args=all_args)
+    start = time.monotonic()
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=timeout_s)
+            result = await _deep_health_session(session)
+            result.latency_ms = int((time.monotonic() - start) * 1000)
+            return result
+
+
+async def deep_health_check(config: McpServerConfig, timeout_s: int) -> McpDeepHealthResult:
+    start = time.monotonic()
+    try:
+        if config.transport_type == "streamable-http":
+            result = await asyncio.wait_for(_deep_health_http(config, timeout_s), timeout=timeout_s + 10)
+        else:
+            result = await asyncio.wait_for(_deep_health_stdio(config, timeout_s), timeout=timeout_s + 10)
+        if result.latency_ms > 5000:
+            result.status = "degraded"
+            result.message = f"High latency: {result.latency_ms}ms"
+        return result
+    except asyncio.TimeoutError:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return McpDeepHealthResult(
+            status="disconnected", latency_ms=latency_ms,
+            message="Connection timed out", error="Connection timed out",
+        )
+    except Exception as exc:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        msg = str(exc)
+        status = "error"
+        if "401" in msg or "403" in msg or "auth" in msg.lower() or "unauthorized" in msg.lower():
+            status = "auth_required"
+        return McpDeepHealthResult(
+            status=status, latency_ms=latency_ms,
+            message=msg, error=msg, auth_ok=(status != "auth_required"),
+        )
 
 
 async def execute_tool(config: McpServerConfig, tool_name: str, arguments: dict) -> McpExecuteResult:

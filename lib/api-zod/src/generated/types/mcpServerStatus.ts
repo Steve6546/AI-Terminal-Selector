@@ -13,5 +13,7 @@ export const McpServerStatus = {
   connected: "connected",
   disconnected: "disconnected",
   checking: "checking",
+  degraded: "degraded",
+  auth_required: "auth_required",
   error: "error",
 } as const;

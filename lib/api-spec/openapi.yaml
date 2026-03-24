@@ -1046,11 +1046,21 @@ components:
           type: integer
         status:
           type: string
-          enum: [connected, disconnected, checking, error]
+          enum: [connected, disconnected, checking, degraded, auth_required, error]
         enabled:
           type: boolean
         toolCount:
           type: integer
+        latencyMs:
+          type: integer
+        lastErrorMessage:
+          type: string
+        lastSuccessAt:
+          type: string
+          format: date-time
+        lastFailureAt:
+          type: string
+          format: date-time
         lastCheckedAt:
           type: string
           format: date-time
