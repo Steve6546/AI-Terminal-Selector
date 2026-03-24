@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Zap, Code, TerminalSquare, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle } from "lucide-react";
+import { MessageSquare, Zap, Code, TerminalSquare, AlertTriangle, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -16,12 +16,15 @@ import {
 import { useListAnthropicMessages, useListExecutions, useCreateAnthropicConversation, useTruncateAnthropicMessagesFrom } from "@workspace/api-client-react";
 import type { AnthropicMessage, Execution } from "@workspace/api-client-react";
 import { useLocalSettings } from "@/hooks/use-local-settings";
-import { useChatStream, type LiveToolExecution } from "@/hooks/use-chat-stream";
+import { useChatStream } from "@/hooks/use-chat-stream";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
 import { ChatInput, type ToolParams } from "@/components/chat/chat-input";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { ToolExecutionCard } from "@/components/chat/tool-execution-card";
+import { ThinkingPanel } from "@/components/chat/thinking-panel";
+import { LiveToolCard } from "@/components/chat/live-tool-card";
+import { ApprovalCard } from "@/components/chat/approval-card";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { PageLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
@@ -94,49 +97,6 @@ function ErrorBanner({ error, onDismiss }: { error: Error; onDismiss: () => void
   );
 }
 
-function LiveExecutionBadge({ exec }: { exec: LiveToolExecution }) {
-  const isDone = exec.phase === "done";
-  const isRunning = exec.phase === "running" || exec.phase === "selecting-server";
-  const isPlanning = exec.phase === "planning";
-
-  const badgeColor = isDone && exec.success
-    ? "bg-green-500/10 border-green-500/20 text-green-400"
-    : isDone && !exec.success
-    ? "bg-red-500/10 border-red-500/20 text-red-400"
-    : isPlanning
-    ? "bg-violet-500/10 border-violet-500/20 text-violet-300"
-    : "bg-blue-500/10 border-blue-500/20 text-blue-400";
-
-  const label = isPlanning
-    ? (exec.message ?? "Planning...")
-    : exec.phase === "selecting-server"
-    ? `Selecting: ${exec.serverName ?? "server"}`
-    : exec.toolName ?? "tool";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono border", badgeColor)}
-    >
-      {isDone ? (
-        exec.success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />
-      ) : (isRunning || isPlanning) ? (
-        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-      ) : (
-        <Clock className="w-3.5 h-3.5" />
-      )}
-      <span>{label}</span>
-      {!isPlanning && exec.serverName && (
-        <span className="opacity-60">@ {exec.serverName}</span>
-      )}
-      {isDone && exec.durationMs != null && (
-        <span className="opacity-60">{exec.durationMs}ms</span>
-      )}
-    </motion.div>
-  );
-}
-
 export default function ChatPage() {
   const params = useParams();
   const [, setLocation] = useLocation();
@@ -161,18 +121,31 @@ export default function ChatPage() {
     { query: { enabled: !!conversationId, queryKey: ["executions", conversationId] } }
   );
 
-  const { sendMessage, stopStream, isStreaming, streamedText, liveExecutions } = useChatStream({
+  const {
+    sendMessage,
+    stopStream,
+    isStreaming,
+    streamedText,
+    isThinking,
+    thinkingLines,
+    thinkingDone,
+    liveTools,
+    pendingApproval,
+    resolveApproval,
+  } = useChatStream({
     conversationId: conversationId || 0,
     model,
     mode,
     onError: (err) => setStreamError(err),
   });
 
+  const hasActiveTool = liveTools.some((t) => t.phase !== "done");
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, executions, streamedText, liveExecutions]);
+  }, [messages, executions, streamedText, liveTools, isThinking]);
 
   const timelineItems = useMemo(() => {
     if (!messages && !executions) return [];
@@ -188,7 +161,6 @@ export default function ChatPage() {
     return items.sort((a, b) => a.time - b.time);
   }, [messages, executions]);
 
-  // When a pending message exists and we've navigated to a conversation, send it
   useEffect(() => {
     if (conversationId && pendingMessage) {
       const { text, attachmentIds, toolParams } = pendingMessage;
@@ -200,7 +172,6 @@ export default function ChatPage() {
   const handleSend = useCallback((text: string, attachmentIds?: number[], toolParams?: ToolParams) => {
     setStreamError(null);
     if (!conversationId) {
-      // Auto-create a new conversation then send
       createMutation.mutate(
         { data: { title: "New Conversation" } },
         {
@@ -215,28 +186,20 @@ export default function ChatPage() {
     sendMessage(text, attachmentIds, toolParams);
   }, [conversationId, createMutation, sendMessage, setLocation]);
 
-  // Retry: truncate from the user message that preceded the assistant message (inclusive),
-  // removing both the user turn and the assistant turn, then re-send the user's content
-  // as a fresh message. This avoids duplicating the user turn in history.
   const handleRetry = useCallback((assistantMessageId: number, retryModel: string) => {
     if (!conversationId || isStreaming) return;
     setStreamError(null);
 
-    // Find the assistant message and the user message just before it
     const allMessages = messages ?? [];
     const assistantIdx = allMessages.findIndex((m) => m.id === assistantMessageId);
     if (assistantIdx < 0) return;
     const userMessage = assistantIdx > 0 ? allMessages[assistantIdx - 1] : null;
     if (!userMessage || userMessage.role !== "user") return;
 
-    // Switch to the chosen model in settings so TopBar reflects the change
     if (retryModel !== model) {
       setModel(retryModel as typeof model);
     }
 
-    // Truncate from the user message onward (removes user + assistant + any later messages),
-    // then re-send the user's content as a fresh message.
-    // Passing retryModel explicitly bypasses React's async model state update.
     truncateMutation.mutate(
       { id: conversationId, messageId: userMessage.id },
       {
@@ -249,7 +212,6 @@ export default function ChatPage() {
     );
   }, [conversationId, isStreaming, messages, model, setModel, truncateMutation, queryClient, sendMessage]);
 
-  // Edit: truncate from the chosen user message onward, then re-send with new content
   const handleEditResend = useCallback((userMessageId: number, newContent: string) => {
     if (!conversationId || isStreaming) return;
     setStreamError(null);
@@ -364,62 +326,90 @@ export default function ChatPage() {
                     </motion.div>
                   ))}
 
-                  {/* Live execution badges during streaming */}
+                  {/* ── Live streaming section ── */}
                   <AnimatePresence>
-                    {isStreaming && liveExecutions.length > 0 && (
+                    {isStreaming && (
                       <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="w-full flex py-3 px-6"
+                        className="flex flex-col gap-3 py-4"
                       >
-                        <div className="max-w-4xl w-full">
-                          <div className="flex flex-wrap gap-2">
-                            {liveExecutions.map((exec, i) => (
-                              <LiveExecutionBadge key={`${exec.toolName}-${i}`} exec={exec} />
+                        {/* Thinking panel */}
+                        <AnimatePresence>
+                          {(isThinking || thinkingLines.length > 0) && (
+                            <ThinkingPanel
+                              lines={thinkingLines}
+                              isThinking={isThinking}
+                              isDone={thinkingDone}
+                            />
+                          )}
+                        </AnimatePresence>
+
+                        {/* Live tool cards */}
+                        {liveTools.length > 0 && (
+                          <div className="px-6 flex flex-col gap-2">
+                            {liveTools.map((tool) => (
+                              <motion.div
+                                key={tool.toolId}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                              >
+                                <LiveToolCard tool={tool} />
+                              </motion.div>
                             ))}
+                          </div>
+                        )}
+
+                        {/* Approval card — inline in stream */}
+                        <AnimatePresence>
+                          {pendingApproval && (
+                            <ApprovalCard
+                              approval={pendingApproval}
+                              onApprove={() => resolveApproval(true)}
+                              onReject={() => resolveApproval(false)}
+                            />
+                          )}
+                        </AnimatePresence>
+
+                        {/* Streaming text bubble */}
+                        <div className="w-full flex py-2 justify-start bg-secondary/20 border-y border-white/[0.02]">
+                          <div className="flex gap-4 max-w-4xl w-full px-6 flex-row">
+                            <div className="flex-shrink-0 mt-1">
+                              <div className={cn(
+                                "w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg bg-gradient-to-br from-primary to-accent border border-primary/30 glow-effect",
+                                !streamedText && "animate-pulse"
+                              )}>
+                                <SparklesIcon className="w-5 h-5 text-white" />
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-2 min-w-0 flex-1 items-start">
+                              <div className="flex items-center gap-2 text-xs font-mono text-primary">
+                                <span>
+                                  {hasActiveTool
+                                    ? "Executing tools..."
+                                    : isThinking
+                                    ? "Thinking..."
+                                    : "Generating response..."}
+                                </span>
+                              </div>
+                              <div className="text-sm leading-relaxed w-full text-foreground markdown-content">
+                                {streamedText ? (
+                                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streamedText}</ReactMarkdown>
+                                ) : (
+                                  <span className="flex gap-1 mt-2">
+                                    <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" />
+                                    <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0.1s" }} />
+                                    <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0.2s" }} />
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
-
-                  {/* Streaming Indicator Bubble */}
-                  {isStreaming && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="w-full flex py-6 justify-start bg-secondary/20 border-y border-white/[0.02]"
-                    >
-                      <div className="flex gap-4 max-w-4xl w-full px-6 flex-row">
-                        <div className="flex-shrink-0 mt-1">
-                          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg bg-gradient-to-br from-primary to-accent border border-primary/30 glow-effect animate-pulse">
-                            <Sparkles className="w-5 h-5 text-white" />
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2 min-w-0 flex-1 items-start">
-                          <div className="flex items-center gap-2 text-xs font-mono text-primary">
-                            <span>
-                              {liveExecutions.some((e) => e.phase !== "done")
-                                ? "Executing tools..."
-                                : "Generating response..."}
-                            </span>
-                          </div>
-                          <div className="text-sm leading-relaxed w-full text-foreground markdown-content">
-                            {streamedText ? (
-                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streamedText}</ReactMarkdown>
-                            ) : (
-                              <span className="flex gap-1 mt-2">
-                                <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" />
-                                <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0.1s" }} />
-                                <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0.2s" }} />
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
                 </div>
               )}
             </div>
@@ -463,7 +453,7 @@ export default function ChatPage() {
   );
 }
 
-function Sparkles(props: React.SVGProps<SVGSVGElement>) {
+function SparklesIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />

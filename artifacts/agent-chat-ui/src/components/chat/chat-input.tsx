@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench, X, FileText, Image, ChevronDown } from "lucide-react";
+import { Send, Square, Paperclip, Database, Server, Settings, Plus, Bot, Wrench, X, FileText, Image, ChevronDown, Upload } from "lucide-react";
 import { InteractionMode } from "@/hooks/use-local-settings";
 import { cn } from "@/lib/utils";
 import { useListMcpServers, useListMcpTools } from "@workspace/api-client-react";
@@ -38,16 +38,44 @@ interface ChatInputProps {
 const ACCEPT_TYPES = "image/*,.pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.go,.rs,.java,.cpp,.c,.h,.sh";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
+async function uploadFile(
+  file: File,
+  conversationId: number | null | undefined
+): Promise<PendingAttachment | null> {
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const resp = await fetch("/api/attachments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conversationId: conversationId ?? undefined,
+      fileName: file.name || `pasted-image-${Date.now()}.png`,
+      fileType: file.type || "application/octet-stream",
+      content: base64,
+    }),
+  });
+
+  if (!resp.ok) return null;
+  const data = await resp.json() as { id: number; fileName: string; fileType: string };
+  return { id: data.id, fileName: data.fileName, fileType: data.fileType };
+}
+
 export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, conversationId }: ChatInputProps) {
   const [, navigate] = useLocation();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [argsError, setArgsError] = useState<string | null>(null);
 
-  // Tool mode state
   const [selectedServerId, setSelectedServerId] = useState<number | null>(null);
   const [selectedToolName, setSelectedToolName] = useState<string | null>(null);
 
@@ -108,49 +136,63 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
     }
   };
 
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+  const handleFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-
     setUploading(true);
-    const newAttachments: PendingAttachment[] = [];
-
+    const results: PendingAttachment[] = [];
     for (const file of files) {
       try {
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            resolve(result.split(",")[1]);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-
-        const resp = await fetch("/api/attachments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversationId: conversationId ?? undefined,
-            fileName: file.name,
-            fileType: file.type || "application/octet-stream",
-            content: base64,
-          }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json() as { id: number; fileName: string; fileType: string };
-          newAttachments.push({ id: data.id, fileName: data.fileName, fileType: data.fileType });
-        }
+        const att = await uploadFile(file, conversationId);
+        if (att) results.push(att);
       } catch (err) {
-        console.error("Failed to upload attachment:", err);
+        console.error("Upload failed:", err);
       }
     }
-
-    setAttachments((prev) => [...prev, ...newAttachments]);
+    setAttachments((prev) => [...prev, ...results]);
     setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   }, [conversationId]);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    await handleFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [handleFiles]);
+
+  // Paste handler — captures images from clipboard
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter((item) => item.kind === "file" && item.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+
+    e.preventDefault();
+    const files = imageItems
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f !== null);
+    await handleFiles(files);
+  }, [handleFiles]);
+
+  // Drag-and-drop handlers on the outer container
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    // Only clear if leaving the container entirely
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) await handleFiles(files);
+  }, [handleFiles]);
 
   const removeAttachment = (id: number) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
@@ -173,17 +215,35 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
         onChange={handleFileChange}
       />
 
-      <div className={cn(
-        "relative flex flex-col bg-input border border-border rounded-2xl shadow-xl transition-all duration-300",
-        text.trim() ? "border-primary/50 shadow-[0_8px_30px_rgba(99,102,241,0.1)]" : "hover:border-border/80"
-      )}>
+      <div
+        ref={containerRef}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "relative flex flex-col bg-input border rounded-2xl shadow-xl transition-all duration-300",
+          isDragOver
+            ? "border-primary border-2 shadow-[0_0_30px_rgba(99,102,241,0.25)] ring-1 ring-primary/30"
+            : text.trim()
+            ? "border-primary/50 shadow-[0_8px_30px_rgba(99,102,241,0.1)] border"
+            : "border-border hover:border-border/80"
+        )}
+      >
+        {/* Drag overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 rounded-2xl bg-primary/10 z-10 flex items-center justify-center pointer-events-none">
+            <div className="flex flex-col items-center gap-2 text-primary">
+              <Upload className="w-8 h-8" />
+              <span className="text-sm font-medium">Drop files to attach</span>
+            </div>
+          </div>
+        )}
 
         {/* Tool Mode selector bar */}
         {mode === "tool" && (
           <div className="px-4 pt-3 flex flex-wrap items-center gap-2 border-b border-border/40 pb-3">
             <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Direct Execute:</span>
 
-            {/* Server selector */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={cn(
@@ -222,7 +282,6 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Tool selector */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -371,9 +430,10 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
             value={text}
             onChange={(e) => { setText(e.target.value); setArgsError(null); }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               mode === "agent"
-                ? "Ask the agent to do something..."
+                ? "Describe a task for the agent, or paste an image..."
                 : selectedToolName
                 ? `JSON args for "${selectedToolName}", e.g. { "key": "value" } (or leave empty)`
                 : "Select a server and tool above, then enter JSON args here..."
@@ -433,7 +493,7 @@ export function ChatInput({ onSend, onStop, isStreaming, mode, onModeChange, con
         )}
       </div>
       <div className="text-center mt-2">
-        <span className="text-[10px] text-muted-foreground font-mono">Agent Tool Chat uses Replit AI Integrations.</span>
+        <span className="text-[10px] text-muted-foreground font-mono">Agent Tool Chat uses Replit AI Integrations. Paste or drag images to attach.</span>
       </div>
     </div>
   );

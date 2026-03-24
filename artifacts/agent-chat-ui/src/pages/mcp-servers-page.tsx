@@ -10,6 +10,7 @@ import {
   useDeleteMcpServer,
 } from "@workspace/api-client-react";
 import type { McpServer } from "@workspace/api-client-react";
+import { useMcpHealth, type McpLiveStatus } from "@/hooks/use-mcp-health";
 import {
   Server,
   Plus,
@@ -72,20 +73,36 @@ type ServerFormValues = z.infer<typeof serverFormSchema>;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-function StatusDot({ status }: { status: string }) {
+function StatusDot({ status, latencyMs }: { status: string; latencyMs?: number }) {
   if (status === "connected") {
     return (
       <span className="flex items-center gap-1.5 text-green-400 text-xs font-mono">
         <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-        CONNECTED
+        CONNECTED{latencyMs != null ? ` · ${latencyMs}ms` : ""}
       </span>
     );
   }
-  if (status === "error") {
+  if (status === "degraded") {
+    return (
+      <span className="flex items-center gap-1.5 text-orange-400 text-xs font-mono">
+        <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+        DEGRADED
+      </span>
+    );
+  }
+  if (status === "auth_required") {
+    return (
+      <span className="flex items-center gap-1.5 text-yellow-400 text-xs font-mono">
+        <Lock className="w-3 h-3" />
+        AUTH REQUIRED
+      </span>
+    );
+  }
+  if (status === "error" || status === "disconnected") {
     return (
       <span className="flex items-center gap-1.5 text-red-400 text-xs font-mono">
         <span className="w-2 h-2 rounded-full bg-red-500" />
-        ERROR
+        {status === "disconnected" ? "DISCONNECTED" : "ERROR"}
       </span>
     );
   }
@@ -516,15 +533,20 @@ function ServerFormDialog({
 
 function ServerCard({
   server,
+  liveStatus,
   onEdit,
   onDelete,
   onClick,
 }: {
   server: McpServer;
+  liveStatus?: { status: McpLiveStatus; latencyMs?: number } | null;
   onEdit: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
   onClick: () => void;
 }) {
+  const displayStatus = liveStatus?.status ?? server.status;
+  const latencyMs = liveStatus?.latencyMs;
+
   return (
     <div
       onClick={onClick}
@@ -537,7 +559,7 @@ function ServerCard({
           </div>
           <div>
             <h3 className="font-semibold text-white leading-tight">{server.name}</h3>
-            <StatusDot status={server.status} />
+            <StatusDot status={displayStatus} latencyMs={latencyMs} />
           </div>
         </div>
 
@@ -588,6 +610,7 @@ export default function McpServersPage() {
   const deleteMutation = useDeleteMcpServer();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { getLiveStatus } = useMcpHealth();
 
   const [showFormDialog, setShowFormDialog] = useState(false);
   const [editingServer, setEditingServer] = useState<McpServer | null>(null);
@@ -693,6 +716,7 @@ export default function McpServersPage() {
                 <ServerCard
                   key={server.id}
                   server={server}
+                  liveStatus={getLiveStatus(server.id)}
                   onClick={() => setLocation(`/servers/${server.id}`)}
                   onEdit={(e) => {
                     e.stopPropagation();
